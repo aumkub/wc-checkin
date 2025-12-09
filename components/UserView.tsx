@@ -17,7 +17,7 @@ export const UserView: React.FC = () => {
       // 1. Fetch Config
       const config = await Storage.getTicketConfig();
       
-      // 2. Fetch User by Email (only relevant tickets to save bandwidth? No, logic requires finding tickets first)
+      // 2. Fetch User by Email
       const userTickets = await Storage.getAttendeesByEmail(email);
       
       if (userTickets.length === 0) {
@@ -69,6 +69,16 @@ export const UserView: React.FC = () => {
   const reset = () => {
     setEmail('');
     setResult(null);
+  };
+
+  const getBadgeStyles = (type: string) => {
+    const t = type.toLowerCase();
+    if (t.includes('micro sponsor')) return 'bg-amber-100 text-amber-800 border-amber-200 ring-1 ring-amber-500/20';
+    if (t.includes('sponsor')) return 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-500/20';
+    if (t.includes('speaker')) return 'bg-purple-100 text-purple-800 border-purple-200 ring-1 ring-purple-500/20';
+    if (t.includes('volunteer')) return 'bg-emerald-100 text-emerald-800 border-emerald-200 ring-1 ring-emerald-500/20';
+    if (t.includes('contributor')) return 'bg-blue-100 text-blue-800 border-blue-200 ring-1 ring-blue-500/20';
+    return 'bg-indigo-100 text-indigo-700 border-indigo-200';
   };
 
   return (
@@ -138,7 +148,7 @@ export const UserView: React.FC = () => {
                   <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Tickets Activated</p>
                   <div className="flex flex-wrap gap-2 justify-center">
                     {result.checkedInTypes.map(type => (
-                      <span key={type} className="inline-block px-3 py-1 bg-indigo-100 text-indigo-700 text-xs font-semibold rounded-full border border-indigo-200">
+                      <span key={type} className={`inline-block px-3 py-1 rounded-full text-xs font-semibold border ${getBadgeStyles(type)}`}>
                         {type}
                       </span>
                     ))}

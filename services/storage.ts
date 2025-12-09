@@ -23,17 +23,14 @@ export const upsertAttendees = async (newAttendees: Attendee[]) => {
   const current = await getAttendees();
   const currentMap = new Map(current.map(a => [a.id, a]));
 
+  let addedCount = 0;
+
   for (const att of newAttendees) {
-    // If ID exists, we keep the existing check-in status unless explicitly overridden (which CSV usually doesn't have)
-    const existing = currentMap.get(att.id);
-    if (existing) {
-      currentMap.set(att.id, { 
-        ...att, 
-        checkedIn: existing.checkedIn, 
-        checkInTime: existing.checkInTime 
-      });
-    } else {
+    // Requirement: If attendee exists (same ID), ignore it completely.
+    // Do not update, do not overwrite check-in status. Only add if new.
+    if (!currentMap.has(att.id)) {
       currentMap.set(att.id, att);
+      addedCount++;
     }
   }
 
@@ -136,7 +133,8 @@ export const parseCSV = (csvText: string): Attendee[] => {
     if (values.length >= 5) {
       attendees.push({
         id: values[0] || Math.random().toString(36).substr(2, 9),
-        ticketType: values[1].replace(/^"|"$/g, ''), 
+        // Trim quotes and whitespace to handle "Micro Sponsor" cleanly
+        ticketType: values[1].replace(/^"|"$/g, '').trim(), 
         firstName: values[2],
         lastName: values[3],
         email: values[4],

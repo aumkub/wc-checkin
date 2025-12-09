@@ -1,13 +1,19 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, Settings, Upload, CheckCircle, Search, 
-  Filter, XCircle, BarChart3, RefreshCw, Database
+  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, ArrowRight
 } from 'lucide-react';
 import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
 import { generateDailyReport } from '../services/geminiService';
 
 export const AdminView: React.FC = () => {
+  // Auth State
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [passwordInput, setPasswordInput] = useState('');
+  const [authError, setAuthError] = useState(false);
+
+  // App State
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [ticketConfig, setTicketConfig] = useState<TicketConfig>({ activeTypes: [] });
   const [activeTab, setActiveTab] = useState<'attendees' | 'settings'>('attendees');
@@ -18,8 +24,20 @@ export const AdminView: React.FC = () => {
   const [loadingData, setLoadingData] = useState(false);
 
   useEffect(() => {
-    loadData();
-  }, []);
+    if (isAuthenticated) {
+      loadData();
+    }
+  }, [isAuthenticated]);
+
+  const handleLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (passwordInput === 'jmgd68f4') {
+      setIsAuthenticated(true);
+      setAuthError(false);
+    } else {
+      setAuthError(true);
+    }
+  };
 
   const loadData = async () => {
     setLoadingData(true);
@@ -41,30 +59,11 @@ export const AdminView: React.FC = () => {
       const text = event.target?.result as string;
       const parsed = Storage.parseCSV(text);
       
-      // Merge logic: Map existing by email+ticketType to update, or add new
-      // We start with current attendees to preserve check-in status if IDs match,
-      // but if CSV contains new IDs or updates, we want those.
-      // Simpler approach for Supabase: Just upsert the parsed list.
-      // However, to preserve "checkedIn" status if the CSV doesn't have it (it usually doesn't),
-      // we need to be careful. The Storage.parseCSV defaults checkedIn to false.
-      // If we blindly upsert, we might reset check-ins.
-      
-      // Better strategy: Identify matches and keep existing status
-      const currentMap = new Map(attendees.map(a => [a.id, a]));
-      
-      const toSave = parsed.map(p => {
-        const existing = currentMap.get(p.id);
-        if (existing) {
-          // Keep existing status, update names/email if changed
-          return { ...p, checkedIn: existing.checkedIn, checkInTime: existing.checkInTime };
-        }
-        return p;
-      });
-
       setLoadingData(true);
-      await Storage.upsertAttendees(toSave);
-      await loadData(); // Reload from DB
-      alert(`Imported ${parsed.length} records.`);
+      // upsertAttendees now ignores duplicates based on ID
+      await Storage.upsertAttendees(parsed);
+      await loadData();
+      alert(`Import process complete. Checked ${parsed.length} records.`);
       setLoadingData(false);
     };
     reader.readAsText(file);
@@ -77,13 +76,11 @@ export const AdminView: React.FC = () => {
     
     const newConfig = { activeTypes: newTypes };
     
-    // Optimistic update
     setTicketConfig(newConfig);
     await Storage.saveTicketConfig(newConfig);
   };
 
   const manualCheckIn = async (id: string, currentStatus: boolean) => {
-    // Optimistic update
     const newStatus = !currentStatus;
     const newTime = newStatus ? new Date().toISOString() : undefined;
     
@@ -117,6 +114,55 @@ export const AdminView: React.FC = () => {
     setLoadingReport(false);
   };
 
+  // Helper for badge styling including Micro Sponsor support
+  const getBadgeStyles = (type: string) => {
+    const t = type.toLowerCase();
+    if (t.includes('micro sponsor')) return 'bg-amber-100 text-amber-800 border-amber-200 ring-1 ring-amber-500/20';
+    if (t.includes('sponsor')) return 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-500/20';
+    if (t.includes('speaker')) return 'bg-purple-100 text-purple-800 border-purple-200 ring-1 ring-purple-500/20';
+    if (t.includes('volunteer')) return 'bg-emerald-100 text-emerald-800 border-emerald-200 ring-1 ring-emerald-500/20';
+    if (t.includes('contributor')) return 'bg-blue-100 text-blue-800 border-blue-200 ring-1 ring-blue-500/20';
+    return 'bg-slate-100 text-slate-700 border-slate-200';
+  };
+
+  // Login Screen
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+        <div className="bg-white max-w-sm w-full rounded-2xl shadow-xl p-8">
+          <div className="flex justify-center mb-6">
+            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
+              <Lock className="w-8 h-8 text-slate-500" />
+            </div>
+          </div>
+          <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">Admin Access</h2>
+          <p className="text-center text-slate-500 mb-6 text-sm">Please enter the administrator password to continue.</p>
+          
+          <form onSubmit={handleLogin} className="space-y-4">
+            <div>
+              <input
+                type="password"
+                value={passwordInput}
+                onChange={(e) => setPasswordInput(e.target.value)}
+                placeholder="Enter password"
+                className={`w-full px-4 py-3 rounded-xl border ${authError ? 'border-red-300 focus:ring-red-200' : 'border-slate-300 focus:ring-indigo-200'} focus:border-indigo-500 focus:ring-4 outline-none transition-all`}
+                autoFocus
+              />
+              {authError && <p className="text-red-500 text-xs mt-2 ml-1">Incorrect password</p>}
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
+            >
+              Access Dashboard
+              <ArrowRight className="w-4 h-4" />
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col">
       {/* Header */}
@@ -127,18 +173,26 @@ export const AdminView: React.FC = () => {
           </div>
           <h1 className="text-xl font-bold text-slate-800">Event Admin</h1>
         </div>
-        <div className="flex bg-slate-100 p-1 rounded-lg">
+        <div className="flex items-center gap-4">
+          <div className="flex bg-slate-100 p-1 rounded-lg">
+            <button 
+              onClick={() => setActiveTab('attendees')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'attendees' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Attendees
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            >
+              Settings
+            </button>
+          </div>
           <button 
-            onClick={() => setActiveTab('attendees')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'attendees' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+            onClick={() => setIsAuthenticated(false)}
+            className="text-sm text-slate-500 hover:text-slate-800 font-medium"
           >
-            Attendees
-          </button>
-          <button 
-            onClick={() => setActiveTab('settings')}
-            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-          >
-            Settings
+            Logout
           </button>
         </div>
       </header>
@@ -246,7 +300,7 @@ export const AdminView: React.FC = () => {
                             {attendee.firstName} {attendee.lastName}
                           </td>
                           <td className="px-6 py-4">
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
+                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${getBadgeStyles(attendee.ticketType)}`}>
                               {attendee.ticketType}
                             </span>
                           </td>
@@ -342,6 +396,9 @@ export const AdminView: React.FC = () => {
                       </div>
                     </div>
                     <span className="ml-3 text-slate-700 font-medium select-none">{type}</span>
+                    <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full ${getBadgeStyles(type)}`}>
+                      Badge
+                    </span>
                   </label>
                 ))}
               </div>
