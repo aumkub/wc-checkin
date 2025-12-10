@@ -1,19 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, Settings, Upload, CheckCircle, Search, 
-  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, ArrowRight
+  Filter, XCircle, BarChart3, RefreshCw, Database, Lock
 } from 'lucide-react';
 import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
 import { generateDailyReport } from '../services/geminiService';
 
-export const AdminView: React.FC = () => {
-  // Auth State
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
-  const [passwordInput, setPasswordInput] = useState('');
-  const [authError, setAuthError] = useState(false);
+const ADMIN_PASSWORD = 'jmgd68f4';
+const AUTH_STORAGE_KEY = 'admin_authenticated';
 
-  // App State
+export const AdminView: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    // Check if already authenticated in this session
+    return sessionStorage.getItem(AUTH_STORAGE_KEY) === 'true';
+  });
+  const [password, setPassword] = useState('');
+  const [passwordError, setPasswordError] = useState('');
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [ticketConfig, setTicketConfig] = useState<TicketConfig>({ activeTypes: [] });
   const [activeTab, setActiveTab] = useState<'attendees' | 'settings'>('attendees');
@@ -29,13 +32,17 @@ export const AdminView: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handlePasswordSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (passwordInput === 'jmgd68f4') {
+    setPasswordError('');
+    
+    if (password === ADMIN_PASSWORD) {
       setIsAuthenticated(true);
-      setAuthError(false);
+      sessionStorage.setItem(AUTH_STORAGE_KEY, 'true');
+      setPassword('');
     } else {
-      setAuthError(true);
+      setPasswordError('Incorrect password. Please try again.');
+      setPassword('');
     }
   };
 
@@ -59,11 +66,30 @@ export const AdminView: React.FC = () => {
       const text = event.target?.result as string;
       const parsed = Storage.parseCSV(text);
       
+      // Merge logic: Map existing by email+ticketType to update, or add new
+      // We start with current attendees to preserve check-in status if IDs match,
+      // but if CSV contains new IDs or updates, we want those.
+      // Simpler approach for Supabase: Just upsert the parsed list.
+      // However, to preserve "checkedIn" status if the CSV doesn't have it (it usually doesn't),
+      // we need to be careful. The Storage.parseCSV defaults checkedIn to false.
+      // If we blindly upsert, we might reset check-ins.
+      
+      // Better strategy: Identify matches and keep existing status
+      const currentMap = new Map(attendees.map(a => [a.id, a]));
+      
+      const toSave = parsed.map(p => {
+        const existing = currentMap.get(p.id);
+        if (existing) {
+          // Keep existing status, update names/email if changed
+          return { ...p, checkedIn: existing.checkedIn, checkInTime: existing.checkInTime };
+        }
+        return p;
+      });
+
       setLoadingData(true);
-      // upsertAttendees now ignores duplicates based on ID
-      await Storage.upsertAttendees(parsed);
-      await loadData();
-      alert(`Import process complete. Checked ${parsed.length} records.`);
+      await Storage.upsertAttendees(toSave);
+      await loadData(); // Reload from DB
+      alert(`Imported ${parsed.length} records.`);
       setLoadingData(false);
     };
     reader.readAsText(file);
@@ -76,11 +102,13 @@ export const AdminView: React.FC = () => {
     
     const newConfig = { activeTypes: newTypes };
     
+    // Optimistic update
     setTicketConfig(newConfig);
     await Storage.saveTicketConfig(newConfig);
   };
 
   const manualCheckIn = async (id: string, currentStatus: boolean) => {
+    // Optimistic update
     const newStatus = !currentStatus;
     const newTime = newStatus ? new Date().toISOString() : undefined;
     
@@ -114,50 +142,56 @@ export const AdminView: React.FC = () => {
     setLoadingReport(false);
   };
 
-  // Helper for badge styling including Micro Sponsor support
-  const getBadgeStyles = (type: string) => {
-    const t = type.toLowerCase();
-    if (t.includes('micro sponsor')) return 'bg-amber-100 text-amber-800 border-amber-200 ring-1 ring-amber-500/20';
-    if (t.includes('sponsor')) return 'bg-yellow-100 text-yellow-800 border-yellow-200 ring-1 ring-yellow-500/20';
-    if (t.includes('speaker')) return 'bg-purple-100 text-purple-800 border-purple-200 ring-1 ring-purple-500/20';
-    if (t.includes('volunteer')) return 'bg-emerald-100 text-emerald-800 border-emerald-200 ring-1 ring-emerald-500/20';
-    if (t.includes('contributor')) return 'bg-blue-100 text-blue-800 border-blue-200 ring-1 ring-blue-500/20';
-    return 'bg-slate-100 text-slate-700 border-slate-200';
-  };
-
-  // Login Screen
+  // Show password prompt if not authenticated
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
-        <div className="bg-white max-w-sm w-full rounded-2xl shadow-xl p-8">
-          <div className="flex justify-center mb-6">
-            <div className="w-16 h-16 bg-slate-100 rounded-full flex items-center justify-center">
-              <Lock className="w-8 h-8 text-slate-500" />
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-slate-100 overflow-hidden">
+          {/* Header */}
+          <div className="bg-indigo-600 p-8 text-center relative overflow-hidden">
+            <div className="absolute top-0 left-0 w-full h-full bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] opacity-10"></div>
+            <div className="relative z-10">
+              <div className="w-16 h-16 bg-white/20 backdrop-blur-sm rounded-2xl mx-auto flex items-center justify-center mb-4">
+                <Lock className="w-8 h-8 text-white" />
+              </div>
+              <h1 className="text-2xl font-bold text-white">Admin Access</h1>
+              <p className="text-indigo-200 text-sm mt-1">Enter password to continue</p>
             </div>
           </div>
-          <h2 className="text-2xl font-bold text-center text-slate-800 mb-2">Admin Access</h2>
-          <p className="text-center text-slate-500 mb-6 text-sm">Please enter the administrator password to continue.</p>
-          
-          <form onSubmit={handleLogin} className="space-y-4">
-            <div>
-              <input
-                type="password"
-                value={passwordInput}
-                onChange={(e) => setPasswordInput(e.target.value)}
-                placeholder="Enter password"
-                className={`w-full px-4 py-3 rounded-xl border ${authError ? 'border-red-300 focus:ring-red-200' : 'border-slate-300 focus:ring-indigo-200'} focus:border-indigo-500 focus:ring-4 outline-none transition-all`}
-                autoFocus
-              />
-              {authError && <p className="text-red-500 text-xs mt-2 ml-1">Incorrect password</p>}
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-xl transition-colors flex items-center justify-center gap-2"
-            >
-              Access Dashboard
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
+
+          <div className="p-8">
+            <form onSubmit={handlePasswordSubmit} className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-sm font-semibold text-slate-700 ml-1">Password</label>
+                <input
+                  type="password"
+                  required
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setPasswordError('');
+                  }}
+                  placeholder="Enter admin password"
+                  className="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all"
+                  autoFocus
+                />
+                {passwordError && (
+                  <p className="text-sm text-red-600 mt-1">{passwordError}</p>
+                )}
+              </div>
+              <button
+                type="submit"
+                className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3.5 rounded-xl shadow-lg shadow-indigo-500/20 transition-all"
+              >
+                Access Admin Panel
+              </button>
+            </form>
+          </div>
+
+          {/* Footer */}
+          <div className="bg-slate-50 p-4 border-t border-slate-100 text-center">
+            <p className="text-xs text-slate-400">Protected Admin Area</p>
+          </div>
         </div>
       </div>
     );
@@ -173,26 +207,18 @@ export const AdminView: React.FC = () => {
           </div>
           <h1 className="text-xl font-bold text-slate-800">Event Admin</h1>
         </div>
-        <div className="flex items-center gap-4">
-          <div className="flex bg-slate-100 p-1 rounded-lg">
-            <button 
-              onClick={() => setActiveTab('attendees')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'attendees' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Attendees
-            </button>
-            <button 
-              onClick={() => setActiveTab('settings')}
-              className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-            >
-              Settings
-            </button>
-          </div>
+        <div className="flex bg-slate-100 p-1 rounded-lg">
           <button 
-            onClick={() => setIsAuthenticated(false)}
-            className="text-sm text-slate-500 hover:text-slate-800 font-medium"
+            onClick={() => setActiveTab('attendees')}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'attendees' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
           >
-            Logout
+            Attendees
+          </button>
+          <button 
+            onClick={() => setActiveTab('settings')}
+            className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${activeTab === 'settings' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+          >
+            Settings
           </button>
         </div>
       </header>
@@ -300,7 +326,7 @@ export const AdminView: React.FC = () => {
                             {attendee.firstName} {attendee.lastName}
                           </td>
                           <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium border ${getBadgeStyles(attendee.ticketType)}`}>
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-800 border border-slate-200">
                               {attendee.ticketType}
                             </span>
                           </td>
@@ -312,7 +338,7 @@ export const AdminView: React.FC = () => {
                               onClick={() => manualCheckIn(attendee.id, attendee.checkedIn)}
                               className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
                                 attendee.checkedIn 
-                                  ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200' 
+                                  ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 whitespace-nowrap' 
                                   : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
                               }`}
                             >
@@ -396,9 +422,6 @@ export const AdminView: React.FC = () => {
                       </div>
                     </div>
                     <span className="ml-3 text-slate-700 font-medium select-none">{type}</span>
-                    <span className={`ml-auto text-[10px] px-2 py-0.5 rounded-full ${getBadgeStyles(type)}`}>
-                      Badge
-                    </span>
                   </label>
                 ))}
               </div>

@@ -1,102 +1,123 @@
 import { Attendee, TicketConfig } from '../types';
+import { supabase } from './supabaseClient';
 
-const STORAGE_KEY_ATTENDEES = 'eventflow_attendees';
-const STORAGE_KEY_CONFIG = 'eventflow_config';
+const TABLE_ATTENDEES = 'attendees';
+const TABLE_TICKET_CONFIG = 'ticket_config';
 
-// Helper to simulate network delay for realistic UI feedback
-const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+const normalizeEmail = (email: string) => email.toLowerCase().trim();
 
 export const getAttendees = async (): Promise<Attendee[]> => {
-  await delay(300); 
-  const stored = localStorage.getItem(STORAGE_KEY_ATTENDEES);
-  return stored ? JSON.parse(stored) : [];
+  const { data, error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .select('*')
+    .order('lastName', { ascending: true });
+
+  if (error) {
+    console.error('Supabase getAttendees error', error);
+    return [];
+  }
+
+  return data ?? [];
 };
 
 export const getAttendeesByEmail = async (email: string): Promise<Attendee[]> => {
-  await delay(300);
-  const attendees = await getAttendees();
-  return attendees.filter(a => a.email.toLowerCase().trim() === email.toLowerCase().trim());
+  const normalized = normalizeEmail(email);
+  const { data, error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .select('*')
+    .eq('email', normalized);
+
+  if (error) {
+    console.error('Supabase getAttendeesByEmail error', error);
+    return [];
+  }
+
+  return data ?? [];
 };
 
 export const upsertAttendees = async (newAttendees: Attendee[]) => {
-  await delay(500);
-  const current = await getAttendees();
-  const currentMap = new Map(current.map(a => [a.id, a]));
+  const sanitized = newAttendees.map(att => ({
+    ...att,
+    email: normalizeEmail(att.email),
+  }));
 
-  let addedCount = 0;
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .upsert(sanitized, { onConflict: 'id' });
 
-  for (const att of newAttendees) {
-    // Requirement: If attendee exists (same ID), ignore it completely.
-    // Do not update, do not overwrite check-in status. Only add if new.
-    if (!currentMap.has(att.id)) {
-      currentMap.set(att.id, att);
-      addedCount++;
-    }
+  if (error) {
+    console.error('Supabase upsertAttendees error', error);
+    return false;
   }
 
-  const updatedList = Array.from(currentMap.values());
-  localStorage.setItem(STORAGE_KEY_ATTENDEES, JSON.stringify(updatedList));
   return true;
 };
 
 export const checkInAttendee = async (id: string, checkedIn: boolean, checkInTime?: string) => {
-  await delay(200);
-  const attendees = await getAttendees();
-  const index = attendees.findIndex(a => a.id === id);
-  
-  if (index !== -1) {
-    attendees[index].checkedIn = checkedIn;
-    attendees[index].checkInTime = checkInTime;
-    localStorage.setItem(STORAGE_KEY_ATTENDEES, JSON.stringify(attendees));
-    return true;
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .update({ checkedIn, checkInTime })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Supabase checkInAttendee error', error);
+    return false;
   }
-  return false;
+
+  return true;
 };
 
 // Batch check-in for user view (checks in all valid tickets for the email)
 export const checkInUserTickets = async (email: string, validTypes: string[]) => {
-  await delay(400);
-  const attendees = await getAttendees();
-  let updated = false;
+  const normalized = normalizeEmail(email);
   const now = new Date().toISOString();
 
-  const newAttendees = attendees.map(a => {
-    // Check if email matches AND ticket type is valid AND not already checked in
-    if (
-      a.email.toLowerCase().trim() === email.toLowerCase().trim() && 
-      validTypes.includes(a.ticketType) &&
-      !a.checkedIn
-    ) {
-      updated = true;
-      return { ...a, checkedIn: true, checkInTime: now };
-    }
-    return a;
-  });
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .update({ checkedIn: true, checkInTime: now })
+    .eq('email', normalized)
+    .in('ticketType', validTypes)
+    .eq('checkedIn', false);
 
-  if (updated) {
-    localStorage.setItem(STORAGE_KEY_ATTENDEES, JSON.stringify(newAttendees));
+  if (error) {
+    console.error('Supabase checkInUserTickets error', error);
+    return false;
   }
-  // Return true to indicate process completed (even if no records needed updating)
+
   return true;
 };
 
 export const getTicketConfig = async (): Promise<TicketConfig> => {
-  await delay(200);
-  const stored = localStorage.getItem(STORAGE_KEY_CONFIG);
-  
-  if (stored) {
-    return JSON.parse(stored);
+  const { data, error } = await supabase
+    .from(TABLE_TICKET_CONFIG)
+    .select('*')
+    .limit(1)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase getTicketConfig error', error);
   }
-  
-  // Fallback: If no config exists, enable all existing types from attendees
+
+  if (data) {
+    return { activeTypes: data.activeTypes || [] };
+  }
+
+  // Fallback: derive from attendee data if no config row exists yet
   const attendees = await getAttendees();
   const allTypes = Array.from(new Set(attendees.map(a => a.ticketType)));
   return { activeTypes: allTypes };
 };
 
 export const saveTicketConfig = async (config: TicketConfig) => {
-  await delay(200);
-  localStorage.setItem(STORAGE_KEY_CONFIG, JSON.stringify(config));
+  const { error } = await supabase
+    .from(TABLE_TICKET_CONFIG)
+    .upsert({ id: 1, activeTypes: config.activeTypes });
+
+  if (error) {
+    console.error('Supabase saveTicketConfig error', error);
+    return false;
+  }
+
   return true;
 };
 
@@ -133,8 +154,7 @@ export const parseCSV = (csvText: string): Attendee[] => {
     if (values.length >= 5) {
       attendees.push({
         id: values[0] || Math.random().toString(36).substr(2, 9),
-        // Trim quotes and whitespace to handle "Micro Sponsor" cleanly
-        ticketType: values[1].replace(/^"|"$/g, '').trim(), 
+        ticketType: values[1].replace(/^"|"$/g, ''), 
         firstName: values[2],
         lastName: values[3],
         email: values[4],
