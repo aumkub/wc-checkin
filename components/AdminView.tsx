@@ -6,6 +6,7 @@ import {
 import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
 import { COUNTRIES } from '../constants/countries';
+import { supabase } from '../services/supabaseClient';
 
 // Get passwords from environment variables for security
 const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) || 'jmgd68f4';
@@ -39,11 +40,60 @@ export const AdminView: React.FC = () => {
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsPasswordError, setSettingsPasswordError] = useState('');
   const [showSettingsPasswordModal, setShowSettingsPasswordModal] = useState(false);
+  const [alertNotification, setAlertNotification] = useState<{
+    show: boolean;
+    attendee: Attendee | null;
+  }>({ show: false, attendee: null });
 
   useEffect(() => {
     if (isAuthenticated) {
       loadData();
     }
+  }, [isAuthenticated]);
+
+  // Real-time subscription for check-ins with allergies/accessibility needs
+  useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const channel = supabase
+      .channel('attendees-checkin-alerts')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'attendees'
+        },
+        async (payload) => {
+          const updatedAttendee = payload.new as Attendee;
+          const oldAttendee = payload.old as Attendee;
+          
+          // Only trigger if check-in status changed from false to true
+          if (oldAttendee && !oldAttendee.checkedIn && updatedAttendee.checkedIn) {
+            // Check if attendee has allergy or accessibility needs
+            const allergy = updatedAttendee.severeAllergy?.toLowerCase().trim() || '';
+            const accessibility = updatedAttendee.accessibilityNeeds?.toLowerCase().trim() || '';
+            const hasAllergy = allergy.includes('yes');
+            const hasAccessibility = accessibility.includes('yes');
+            
+            if (hasAllergy || hasAccessibility) {
+              // Show alert popup
+              setAlertNotification({
+                show: true,
+                attendee: updatedAttendee
+              });
+              
+              // Reload data to get latest
+              loadData();
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [isAuthenticated]);
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
@@ -909,6 +959,87 @@ export const AdminView: React.FC = () => {
           </div>
         )}
       </main>
+
+      {/* Real-time Alert Popup */}
+      {alertNotification.show && alertNotification.attendee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-red-500 animate-scale-in">
+            <div className="bg-red-500 p-6 rounded-t-2xl">
+              <div className="flex items-center gap-3">
+                <div className="bg-white rounded-full p-3">
+                  <AlertTriangle className="w-8 h-8 text-red-600" />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-bold text-white">⚠️ URGENT ALERT</h2>
+                  <p className="text-red-100 text-sm">New Check-In Detected</p>
+                </div>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="mb-4">
+                <p className="text-lg font-semibold text-slate-800 mb-2">
+                  {alertNotification.attendee.firstName} {alertNotification.attendee.lastName}
+                </p>
+                <p className="text-sm text-slate-600 mb-1">
+                  <span className="font-medium">Email:</span> {alertNotification.attendee.email}
+                </p>
+                <p className="text-sm text-slate-600 mb-1">
+                  <span className="font-medium">Ticket:</span> {alertNotification.attendee.ticketType}
+                </p>
+              </div>
+              
+              <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-4">
+                <p className="text-red-900 font-semibold mb-2">⚠️ Special Requirements:</p>
+                <ul className="text-red-800 text-sm space-y-1">
+                  {(() => {
+                    const allergy = alertNotification.attendee.severeAllergy?.toLowerCase().trim() || '';
+                    const accessibility = alertNotification.attendee.accessibilityNeeds?.toLowerCase().trim() || '';
+                    const hasAllergy = allergy.includes('yes');
+                    const hasAccessibility = accessibility.includes('yes');
+                    
+                    return (
+                      <>
+                        {hasAllergy && (
+                          <li className="flex items-start gap-2">
+                            <span className="font-bold">•</span>
+                            <span><strong>Severe Allergy:</strong> {alertNotification.attendee.severeAllergy}</span>
+                          </li>
+                        )}
+                        {hasAccessibility && (
+                          <li className="flex items-start gap-2">
+                            <span className="font-bold">•</span>
+                            <span><strong>Accessibility Needs:</strong> {alertNotification.attendee.accessibilityNeeds}</span>
+                          </li>
+                        )}
+                        {alertNotification.attendee.notes && (
+                          <li className="flex items-start gap-2 mt-2 pt-2 border-t border-red-200">
+                            <span className="font-bold">•</span>
+                            <span><strong>Notes:</strong> {alertNotification.attendee.notes}</span>
+                          </li>
+                        )}
+                      </>
+                    );
+                  })()}
+                </ul>
+              </div>
+              
+              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                <p className="text-yellow-900 text-sm font-semibold text-center">
+                  👥 Please contact staff immediately to assist this attendee
+                </p>
+              </div>
+              
+              <button
+                onClick={() => setAlertNotification({ show: false, attendee: null })}
+                className="w-full bg-[#10733A] hover:bg-[#10733A]/90 text-white font-semibold py-3 rounded-xl transition-colors"
+              >
+                Acknowledged
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Edit Modal */}
       {editingAttendee && (
