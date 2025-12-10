@@ -1033,7 +1033,7 @@ export const AdminView: React.FC = () => {
                                     ));
                                   }
                                 }}
-                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-all ${
                                   attendee.swagReceived 
                                     ? 'bg-purple-100 text-purple-700 hover:bg-purple-200 border border-purple-200' 
                                     : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
@@ -1056,7 +1056,7 @@ export const AdminView: React.FC = () => {
                                 </button>
                                 <button
                                   onClick={() => manualCheckIn(attendee.id, attendee.checkedIn)}
-                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 whitespace-nowrap rounded-md text-sm font-medium transition-all ${
                                     attendee.checkedIn 
                                       ? 'bg-green-100 text-green-700 hover:bg-green-200 border border-green-200 whitespace-nowrap' 
                                       : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200 whitespace-nowrap'

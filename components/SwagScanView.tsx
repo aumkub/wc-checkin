@@ -30,6 +30,12 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
       setError(null);
       setSuccess(null);
       
+      // Set scanning state first to show the div
+      setScanning(true);
+      
+      // Small delay to ensure DOM is updated
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
       const html5QrCode = new Html5Qrcode(scannerId);
       html5QrCodeRef.current = html5QrCode;
 
@@ -37,11 +43,16 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
         { facingMode: 'environment' }, // Use back camera on mobile
         {
           fps: 10,
-          qrbox: { width: 250, height: 250 }
+          qrbox: { width: 250, height: 250 },
+          aspectRatio: 1.0
         },
         async (decodedText) => {
           // Stop scanning once we get a result
-          await html5QrCode.stop();
+          try {
+            await html5QrCode.stop();
+          } catch (stopError) {
+            console.error('Error stopping scanner', stopError);
+          }
           html5QrCodeRef.current = null;
           setScanning(false);
 
@@ -88,12 +99,11 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
           // Ignore scanning errors (they're frequent during scanning)
         }
       );
-
-      setScanning(true);
     } catch (err: any) {
       console.error('QR Scanner error', err);
       setError(err.message || 'Failed to start camera. Please ensure camera permissions are granted.');
       setScanning(false);
+      html5QrCodeRef.current = null;
     }
   };
 
@@ -149,14 +159,18 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
             </div>
           )}
 
-          <div className="w-full mb-4">
+          <div className="w-full mb-4 relative" style={{ minHeight: '300px', width: '100%' }}>
             <div
               id={scannerId}
-              className={`w-full ${scanning ? 'block' : 'hidden'}`}
-              style={{ minHeight: '300px' }}
+              className="w-full"
+              style={{ 
+                minHeight: '300px', 
+                width: '100%',
+                display: scanning ? 'block' : 'none'
+              }}
             />
             {!scanning && (
-              <div className="w-full bg-slate-100 rounded-lg flex items-center justify-center" style={{ minHeight: '300px' }}>
+              <div className="w-full bg-slate-100 rounded-lg flex items-center justify-center absolute inset-0 pointer-events-none" style={{ minHeight: '300px' }}>
                 <div className="text-center">
                   <Camera className="w-16 h-16 text-slate-400 mx-auto mb-4" />
                   <p className="text-slate-600 font-medium mb-2">Ready to Scan</p>

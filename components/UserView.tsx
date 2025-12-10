@@ -4,6 +4,7 @@ import { Attendee, CheckInResult } from '../types';
 import * as Storage from '../services/storage';
 import { COUNTRIES } from '../constants/countries';
 import QRCode from 'qrcode';
+import { supabase } from '../services/supabaseClient';
 
 export const UserView: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -50,27 +51,35 @@ export const UserView: React.FC = () => {
       // 3.5. Check if all valid tickets are already checked in
       const allCheckedIn = validTicketsForToday.every(t => t.checkedIn === true);
       if (allCheckedIn) {
-        // Show already checked in message
-        const firstTicket = validTicketsForToday[0];
-        setCheckedInTickets(validTicketsForToday);
+        // Fetch latest attendee data to get current swagReceived status
+        const latestTickets = await Storage.getAttendeesByEmail(email);
+        const latestValidTickets = latestTickets.filter(t => config.activeTypes.includes(t.ticketType));
+        const firstTicket = latestValidTickets[0] || validTicketsForToday[0];
+        
+        setCheckedInTickets(latestValidTickets.length > 0 ? latestValidTickets : validTicketsForToday);
         setResult({
           success: true,
           message: "You are already checked in!",
           attendee: firstTicket,
-          checkedInTypes: validTicketsForToday.map(t => t.ticketType),
+          checkedInTypes: latestValidTickets.length > 0 ? latestValidTickets.map(t => t.ticketType) : validTicketsForToday.map(t => t.ticketType),
           alreadyCheckedIn: true
         });
         setSelectedCountry(firstTicket.country || '');
         
-        // Generate QR code for already checked-in users
-        const token = Storage.generateSecureToken(firstTicket.id, email);
-        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-        const qrUrl = `${baseUrl}#/swag/${token}`;
-        try {
-          const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
-          setQrCodeDataUrl(qrDataUrl);
-        } catch (qrError) {
-          console.error('QR Code generation error', qrError);
+        // Only generate QR code if swag hasn't been received yet
+        if (!firstTicket.swagReceived) {
+          // Generate QR code for already checked-in users
+          const token = Storage.generateSecureToken(firstTicket.id, email);
+          const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+          const qrUrl = `${baseUrl}#/swag/${token}`;
+          try {
+            const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
+            setQrCodeDataUrl(qrDataUrl);
+          } catch (qrError) {
+            console.error('QR Code generation error', qrError);
+          }
+        } else {
+          setQrCodeDataUrl(null);
         }
         
         setLoading(false);
@@ -107,28 +116,37 @@ export const UserView: React.FC = () => {
       const success = await Storage.checkInUserTickets(email, activeTypes);
 
       if (success) {
-        const attendee = validTickets[0];
+        // Fetch latest attendee data to get current swagReceived status
+        const latestTickets = await Storage.getAttendeesByEmail(email);
+        const latestValidTickets = latestTickets.filter(t => activeTypes.includes(t.ticketType));
+        const attendee = latestValidTickets[0] || validTickets[0];
+        
         // Store all checked-in tickets for warning check
-        setCheckedInTickets(validTickets);
+        setCheckedInTickets(latestValidTickets.length > 0 ? latestValidTickets : validTickets);
         setResult({
           success: true,
           message: "Welcome!",
           attendee: attendee,
-          checkedInTypes: validTickets.map(t => t.ticketType)
+          checkedInTypes: latestValidTickets.length > 0 ? latestValidTickets.map(t => t.ticketType) : validTickets.map(t => t.ticketType)
         });
         setSelectedCountry(attendee.country || '');
         setPendingCheckIn(null);
         
-        // Generate QR code with secure token
-        const token = Storage.generateSecureToken(attendee.id, email);
-        // Use hash router format for the QR code URL
-        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
-        const qrUrl = `${baseUrl}#/swag/${token}`;
-        try {
-          const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
-          setQrCodeDataUrl(qrDataUrl);
-        } catch (qrError) {
-          console.error('QR Code generation error', qrError);
+        // Only generate QR code if swag hasn't been received yet
+        if (!attendee.swagReceived) {
+          // Generate QR code with secure token
+          const token = Storage.generateSecureToken(attendee.id, email);
+          // Use hash router format for the QR code URL
+          const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+          const qrUrl = `${baseUrl}#/swag/${token}`;
+          try {
+            const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
+            setQrCodeDataUrl(qrDataUrl);
+          } catch (qrError) {
+            console.error('QR Code generation error', qrError);
+          }
+        } else {
+          setQrCodeDataUrl(null);
         }
       } else {
         setResult({
@@ -232,6 +250,57 @@ export const UserView: React.FC = () => {
     
     return false;
   }, [result, pendingCheckIn, checkedInTickets]);
+
+  // Real-time subscription for swag status updates
+  useEffect(() => {
+    if (!result?.attendee?.id) return;
+
+    const attendeeId = result.attendee.id;
+
+    const channel = supabase
+      .channel(`swag-status-${attendeeId}-${Date.now()}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'attendees',
+          filter: `id=eq.${attendeeId}`
+        },
+        (payload) => {
+          const updatedAttendee = payload.new as Attendee;
+          const oldAttendee = payload.old as Attendee;
+          
+          // Always update the result with new attendee data
+          setResult(prev => {
+            if (!prev || !prev.attendee) return prev;
+            return {
+              ...prev,
+              attendee: updatedAttendee
+            };
+          });
+          
+          // Check if swagReceived changed from false/undefined to true
+          const oldSwagStatus = oldAttendee?.swagReceived ?? false;
+          const newSwagStatus = updatedAttendee.swagReceived ?? false;
+          
+          // Hide QR code immediately when swag is received
+          if (!oldSwagStatus && newSwagStatus) {
+            setQrCodeDataUrl(null);
+          }
+          
+          // Update checked in tickets if they exist
+          setCheckedInTickets(prev => prev.map(t => 
+            t.id === updatedAttendee.id ? updatedAttendee : t
+          ));
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [result?.attendee?.id]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -438,19 +507,33 @@ export const UserView: React.FC = () => {
                 </div>
               )}
 
-              {result.success && qrCodeDataUrl && (
+              {result.success && qrCodeDataUrl && result.attendee && !result.attendee.swagReceived && (
                 <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-center">
-                    <p className="text-sm font-semibold text-slate-700 mb-3">Your Check-In QR Code</p>
+                    <p className="text-sm font-semibold text-slate-700 mb-3">Swag Claim QR Code</p>
                     <div className="flex justify-center mb-2">
                       <img 
                         src={qrCodeDataUrl} 
-                        alt="Check-in QR Code" 
+                        alt="Swag Claim QR Code" 
                         className="w-48 h-48 border-4 border-white rounded-lg shadow-md"
                       />
                     </div>
-                    <p className="text-xs text-slate-500 mt-2">
-                      Show this QR code at the swag station to receive your items
+                    <p className="text-xs text-slate-500 mt-4">
+                      Show this QR code<br></br>at the swag claim station to receive your items
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {result.success && result.attendee && result.attendee.swagReceived && (
+                <div className="mb-6 p-4 bg-green-50 rounded-xl border-2 border-green-200">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-8 h-8 text-green-600" />
+                    </div>
+                    <p className="text-sm font-semibold text-green-800 mb-1">Swag Already Claimed</p>
+                    <p className="text-xs text-green-700">
+                      You have already received your swag. Thank you!
                     </p>
                   </div>
                 </div>
