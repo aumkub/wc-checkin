@@ -183,31 +183,49 @@ export const AdminView: React.FC = () => {
       const text = event.target?.result as string;
       const parsed = Storage.parseCSV(text);
       
-      // Merge logic: Map existing by email+ticketType to update, or add new
-      // We start with current attendees to preserve check-in status if IDs match,
-      // but if CSV contains new IDs or updates, we want those.
-      // Simpler approach for Supabase: Just upsert the parsed list.
-      // However, to preserve "checkedIn" status if the CSV doesn't have it (it usually doesn't),
-      // we need to be careful. The Storage.parseCSV defaults checkedIn to false.
-      // If we blindly upsert, we might reset check-ins.
+      // Filter out attendees that already exist (same email + ticketType)
+      // Normalize email for comparison
+      const normalizeEmail = (email: string) => email.toLowerCase().trim();
       
-      // Better strategy: Identify matches and keep existing status
-      const currentMap = new Map<string, Attendee>(attendees.map(a => [a.id, a]));
-      
-      const toSave = parsed.map(p => {
-        const existing = currentMap.get(p.id);
-        if (existing) {
-          // Keep existing status, update names/email if changed
-          return { ...p, checkedIn: existing.checkedIn, checkInTime: existing.checkInTime };
-        }
-        return p;
+      // Create a map of existing attendees by email + ticketType
+      const existingMap = new Map<string, Attendee>();
+      attendees.forEach(a => {
+        const key = `${normalizeEmail(a.email)}|${a.ticketType}`;
+        existingMap.set(key, a);
       });
+      
+      // Filter out existing attendees - only keep new ones
+      const toSave = parsed.filter(p => {
+        const key = `${normalizeEmail(p.email)}|${p.ticketType}`;
+        return !existingMap.has(key);
+      });
+      
+      if (toSave.length === 0) {
+        alert('All attendees in the CSV already exist in the database. No new attendees to add.');
+        setLoadingData(false);
+        // Reset file input
+        if (e.target) {
+          e.target.value = '';
+        }
+        return;
+      }
 
+      const skippedCount = parsed.length - toSave.length;
       setLoadingData(true);
       await Storage.upsertAttendees(toSave);
       await loadData(); // Reload from DB
-      alert(`Imported ${parsed.length} records.`);
+      
+      let message = `Imported ${toSave.length} new attendee(s).`;
+      if (skippedCount > 0) {
+        message += ` Skipped ${skippedCount} existing attendee(s).`;
+      }
+      alert(message);
       setLoadingData(false);
+      
+      // Reset file input
+      if (e.target) {
+        e.target.value = '';
+      }
     };
     reader.readAsText(file);
   };
@@ -482,7 +500,7 @@ export const AdminView: React.FC = () => {
           <div className="bg-[#10733A] p-2 rounded-lg">
             <Settings className="w-5 h-5 text-white" />
           </div>
-          <h1 className="text-xl font-bold text-slate-800">Event Admin</h1>
+          <h1 className="text-xl font-bold text-slate-800">Admin Panel</h1>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-lg">
           <button 
@@ -1031,24 +1049,24 @@ export const AdminView: React.FC = () => {
 
             {/* Pagination */}
             {totalPages > 1 && (
-              <div className="flex items-center justify-between bg-white px-6 py-4 rounded-xl border border-slate-200 shadow-sm">
-                <div className="text-sm text-slate-600">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between bg-white px-3 sm:px-6 py-3 sm:py-4 rounded-xl border border-slate-200 shadow-sm gap-3 sm:gap-0 !mb-16">
+                <div className="text-xs sm:text-sm text-slate-600 text-center sm:text-left">
                   Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
                   <span className="font-medium">
                     {Math.min(currentPage * ITEMS_PER_PAGE, filteredAttendees.length)}
                   </span>{' '}
                   of <span className="font-medium">{filteredAttendees.length}</span> {searchQuery.trim() ? 'results' : 'attendees'}
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-1.5 sm:gap-2">
                   <button
                     onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
                     disabled={currentPage === 1}
-                    className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs sm:text-sm"
                   >
                     <ChevronLeft className="w-4 h-4" />
-                    Previous
+                    <span className="hidden xs:inline">Previous</span>
                   </button>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-0.5 sm:gap-1">
                     {Array.from({ length: totalPages }, (_, i) => i + 1)
                       .filter(page => {
                         // Show first page, last page, current page, and pages around current
@@ -1064,11 +1082,11 @@ export const AdminView: React.FC = () => {
                         return (
                           <React.Fragment key={page}>
                             {showEllipsisBefore && (
-                              <span className="px-2 text-slate-400">...</span>
+                              <span className="px-1 sm:px-2 text-slate-400">...</span>
                             )}
                             <button
                               onClick={() => setCurrentPage(page)}
-                              className={`px-3 py-2 rounded-lg border transition-colors ${
+                              className={`px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border transition-colors text-xs sm:text-sm ${
                                 currentPage === page
                                   ? 'bg-[#10733A] text-white border-[#10733A]'
                                   : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
@@ -1083,9 +1101,9 @@ export const AdminView: React.FC = () => {
                   <button
                     onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
                     disabled={currentPage === totalPages}
-                    className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                    className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1 text-xs sm:text-sm"
                   >
-                    Next
+                    <span className="hidden xs:inline">Next</span>
                     <ChevronRight className="w-4 h-4" />
                   </button>
                 </div>
@@ -1193,9 +1211,8 @@ export const AdminView: React.FC = () => {
                       )}
                       <div>
                         <h3 className="text-white font-bold text-xs">
-                          {hasWarning ? '⚠️ URGENT' : '✓ Check-In'}
+                          {hasWarning ? '⚠️ URGENT' : 'Check-In'}
                         </h3>
-                        <p className="text-white/90 text-[10px]">New Check-In</p>
                       </div>
                     </div>
                     {!hasWarning && (
@@ -1210,17 +1227,17 @@ export const AdminView: React.FC = () => {
                 </div>
                 
                 <div className="p-2">
-                  <p className="font-semibold text-slate-800 text-xs mb-0.5">
+                  <p className="text-xs mb-0.5">
                     {notification.attendee.firstName} {notification.attendee.lastName}
                   </p>
-                  <p className="text-[10px] text-slate-600 mb-1.5">
+                  <p className="text-xs text-slate-600">
                     {notification.attendee.ticketType}
                   </p>
                   
                   {hasWarning && (
-                    <div className="bg-red-50 border border-red-200 rounded p-1.5 mb-1.5">
-                      <p className="text-red-900 font-semibold text-[10px] mb-0.5">⚠️ Special Requirements:</p>
-                      <ul className="text-red-800 text-[10px] space-y-0.5">
+                    <div className="bg-red-50 border border-red-200 rounded p-1.5 mt-1.5 mb-2">
+                      <p className="text-red-900 font-semibold text-xs mb-0.5">⚠️ Special Requirements:</p>
+                      <ul className="text-red-800 text-xs space-y-0.5">
                         {hasAllergy && (
                           <li>• Allergy: {notification.attendee.severeAllergy}</li>
                         )}
@@ -1228,26 +1245,27 @@ export const AdminView: React.FC = () => {
                           <li>• Accessibility: {notification.attendee.accessibilityNeeds}</li>
                         )}
                       </ul>
-                      <p className="text-red-700 text-[10px] font-semibold mt-0.5">
-                        👥 Assist immediately
+                      <p className="flex items-center gap-1 text-red-700 text-xs font-semibold mt-0.5">
+                        👥
+                        <span>Assist immediately</span>
                       </p>
                     </div>
                   )}
                   
                   {hasWarning && (
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-2">
                       <button
                         onClick={() => {
                           setQuickNoteModal({ show: true, attendee: notification.attendee });
                           setQuickNote(notification.attendee.notes || '');
                         }}
-                        className="flex-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                        className="flex-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-medium rounded transition-colors"
                       >
                         Quick Note
                       </button>
                       <button
                         onClick={() => handleAcknowledgeNotification(notification.id)}
-                        className="flex-1 px-2 py-1 bg-[#10733A] hover:bg-[#10733A]/90 text-white text-[10px] font-medium rounded transition-colors"
+                        className="flex-1 px-2 py-1 bg-[#10733A] hover:bg-[#10733A]/90 text-white text-xs font-medium rounded transition-colors"
                       >
                         Acknowledge
                       </button>
@@ -1301,9 +1319,13 @@ export const AdminView: React.FC = () => {
                     className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
                   >
                     <option value="all">All Ticket Types</option>
-                    {ticketConfig.activeTypes.map(type => (
-                      <option key={type} value={type}>{type}</option>
-                    ))}
+                    <option value="Contributor Day Ticket">Contributor Day Ticket</option>
+                    <option value="other">Other Tickets</option>
+                    {ticketConfig.activeTypes
+                      .filter(type => type !== 'Contributor Day Ticket')
+                      .map(type => (
+                        <option key={type} value={type}>{type}</option>
+                      ))}
                   </select>
                 </div>
               </div>
@@ -1315,9 +1337,17 @@ export const AdminView: React.FC = () => {
                   
                   // Apply ticket type filter
                   if (historyFilterType !== 'all') {
-                    checkedInAttendees = checkedInAttendees.filter(a => 
-                      a.ticketType === historyFilterType
-                    );
+                    if (historyFilterType === 'other') {
+                      // Filter for all tickets that are NOT "Contributor Day Ticket"
+                      checkedInAttendees = checkedInAttendees.filter(a => 
+                        a.ticketType !== 'Contributor Day Ticket'
+                      );
+                    } else {
+                      // Filter for specific ticket type
+                      checkedInAttendees = checkedInAttendees.filter(a => 
+                        a.ticketType === historyFilterType
+                      );
+                    }
                   }
                   
                   // Apply search filter
