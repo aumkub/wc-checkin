@@ -7,8 +7,9 @@ import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
 import { COUNTRIES } from '../constants/countries';
 
-const ADMIN_PASSWORD = 'jmgd68f4';
-const SETTINGS_PASSWORD = 'adwcbkk25';
+// Get passwords from environment variables for security
+const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) || 'jmgd68f4';
+const SETTINGS_PASSWORD = (import.meta.env.VITE_SETTINGS_PASSWORD as string | undefined) || 'adwcbkk25';
 const AUTH_STORAGE_KEY = 'admin_authenticated';
 const SETTINGS_AUTH_STORAGE_KEY = 'settings_authenticated';
 
