@@ -66,8 +66,8 @@ export const UserView: React.FC = () => {
         });
         setSelectedCountry(firstTicket.country || '');
         
-        // Only generate QR code if swag hasn't been received yet
-        if (!firstTicket.swagReceived) {
+        // Only generate QR code if swag hasn't been received yet AND ticket type is NOT Contributor Day Ticket
+        if (!firstTicket.swagReceived && firstTicket.ticketType !== 'Contributor Day Ticket') {
           // Generate QR code for already checked-in users
           const token = Storage.generateSecureToken(firstTicket.id, email);
           const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
@@ -125,15 +125,15 @@ export const UserView: React.FC = () => {
         setCheckedInTickets(latestValidTickets.length > 0 ? latestValidTickets : validTickets);
         setResult({
           success: true,
-          message: "Welcome!",
+          message: "",
           attendee: attendee,
           checkedInTypes: latestValidTickets.length > 0 ? latestValidTickets.map(t => t.ticketType) : validTickets.map(t => t.ticketType)
         });
         setSelectedCountry(attendee.country || '');
         setPendingCheckIn(null);
         
-        // Only generate QR code if swag hasn't been received yet
-        if (!attendee.swagReceived) {
+        // Only generate QR code if swag hasn't been received yet AND ticket type is NOT Contributor Day Ticket
+        if (!attendee.swagReceived && attendee.ticketType !== 'Contributor Day Ticket') {
           // Generate QR code with secure token
           const token = Storage.generateSecureToken(attendee.id, email);
           // Use hash router format for the QR code URL
@@ -439,6 +439,53 @@ export const UserView: React.FC = () => {
                       : `Welcome, ${result.attendee?.firstName}!`)
                   : 'Check-In Failed'}
               </h2>
+
+
+              {result.success && result.checkedInTypes && (
+                <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100">
+                  <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Tickets Activated</p>
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    {result.checkedInTypes.map((type, index) => (
+                      <span key={`${type}-${index}`} className="inline-block px-3 py-1 bg-[#11723A]/10 text-[#11723A] text-xs font-semibold rounded-full border border-[#11723A]/20">
+                        {type}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {result.success && qrCodeDataUrl && result.attendee && !result.attendee.swagReceived && 
+               result.attendee.ticketType !== 'Contributor Day Ticket' && (
+                <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-slate-700 mb-3">Swag Claim QR Code</p>
+                    <div className="flex justify-center mb-2">
+                      <img 
+                        src={qrCodeDataUrl} 
+                        alt="Swag Claim QR Code" 
+                        className="w-48 h-48 border-4 border-white rounded-lg shadow-md"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-4">
+                      Show this QR code<br></br>at the swag claim station to receive your items
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {result.success && result.attendee && result.attendee.swagReceived && (
+                <div className="mb-6 p-4 bg-green-50 rounded-xl border-2 border-green-200">
+                  <div className="text-center">
+                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center">
+                      <CheckCircle2 className="w-8 h-8 text-green-600" />
+                    </div>
+                    <p className="text-sm font-semibold text-green-800 mb-1">Swag Already Claimed</p>
+                    <p className="text-xs text-green-700">
+                      You have already received your swag. Thank you!
+                    </p>
+                  </div>
+                </div>
+              )}
               
               {result.alreadyCheckedIn ? (
                 <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6">
@@ -454,19 +501,6 @@ export const UserView: React.FC = () => {
                 <p className="text-slate-600 mb-6 leading-relaxed">
                   {result.message}
                 </p>
-              )}
-
-              {result.success && result.checkedInTypes && (
-                <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100">
-                  <p className="text-xs text-slate-400 uppercase font-semibold mb-2">Tickets Activated</p>
-                  <div className="flex flex-wrap gap-2 justify-center">
-                    {result.checkedInTypes.map((type, index) => (
-                      <span key={`${type}-${index}`} className="inline-block px-3 py-1 bg-[#11723A]/10 text-[#11723A] text-xs font-semibold rounded-full border border-[#11723A]/20">
-                        {type}
-                      </span>
-                    ))}
-                  </div>
-                </div>
               )}
 
               {result.success && hasWarning && !result.alreadyCheckedIn && (
@@ -514,38 +548,6 @@ export const UserView: React.FC = () => {
               {result.success && selectedCountry && (
                 <div className="mb-6 text-sm text-slate-600">
                   <span className="font-medium">Country:</span> {selectedCountry}
-                </div>
-              )}
-
-              {result.success && qrCodeDataUrl && result.attendee && !result.attendee.swagReceived && (
-                <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
-                  <div className="text-center">
-                    <p className="text-sm font-semibold text-slate-700 mb-3">Swag Claim QR Code</p>
-                    <div className="flex justify-center mb-2">
-                      <img 
-                        src={qrCodeDataUrl} 
-                        alt="Swag Claim QR Code" 
-                        className="w-48 h-48 border-4 border-white rounded-lg shadow-md"
-                      />
-                    </div>
-                    <p className="text-xs text-slate-500 mt-4">
-                      Show this QR code<br></br>at the swag claim station to receive your items
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {result.success && result.attendee && result.attendee.swagReceived && (
-                <div className="mb-6 p-4 bg-green-50 rounded-xl border-2 border-green-200">
-                  <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center">
-                      <CheckCircle2 className="w-8 h-8 text-green-600" />
-                    </div>
-                    <p className="text-sm font-semibold text-green-800 mb-1">Swag Already Claimed</p>
-                    <p className="text-xs text-green-700">
-                      You have already received your swag. Thank you!
-                    </p>
-                  </div>
                 </div>
               )}
 
