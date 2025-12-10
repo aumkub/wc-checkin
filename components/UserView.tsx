@@ -330,9 +330,6 @@ export const UserView: React.FC = () => {
               {result.success && hasWarning && (
                 <div className="bg-red-50 border-4 border-red-500 rounded-lg p-5 mb-6 animate-fade-in shadow-lg shadow-red-200/50">
                   <div className="flex items-start gap-3">
-                    <div className="bg-red-500 rounded-full p-2 flex-shrink-0">
-                      <AlertTriangle className="w-6 h-6 text-white" />
-                    </div>
                     <div className="flex-1">
                       <h3 className="text-red-900 font-bold text-base mb-2 flex items-center gap-2">
                         <span className="text-xl">⚠️</span>
@@ -382,7 +379,7 @@ export const UserView: React.FC = () => {
                 onClick={reset}
                 className="text-slate-500 hover:text-slate-800 font-medium text-sm transition-colors"
               >
-                Back to Scan
+                Back to Check-In
               </button>
             </div>
           )}

@@ -40,10 +40,24 @@ export const AdminView: React.FC = () => {
   const [settingsPassword, setSettingsPassword] = useState('');
   const [settingsPasswordError, setSettingsPasswordError] = useState('');
   const [showSettingsPasswordModal, setShowSettingsPasswordModal] = useState(false);
-  const [alertNotification, setAlertNotification] = useState<{
-    show: boolean;
-    attendee: Attendee | null;
-  }>({ show: false, attendee: null });
+  const [notifications, setNotifications] = useState<Array<{
+    id: string;
+    attendee: Attendee;
+    timestamp: number;
+    isUrgent: boolean;
+    acknowledged: boolean;
+  }>>([]);
+  const [quickNoteModal, setQuickNoteModal] = useState<{ show: boolean; attendee: Attendee | null }>({
+    show: false,
+    attendee: null
+  });
+  const [quickNote, setQuickNote] = useState('');
+  const [filterAllergy, setFilterAllergy] = useState<string>('all'); // 'all', 'yes', 'no'
+  const [filterAccessibility, setFilterAccessibility] = useState<string>('all'); // 'all', 'yes', 'no'
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [adminUpdatedAttendees, setAdminUpdatedAttendees] = useState<Set<string>>(new Set());
+  const [historySearchQuery, setHistorySearchQuery] = useState('');
+  const [historyFilterType, setHistoryFilterType] = useState<string>('all');
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -51,7 +65,7 @@ export const AdminView: React.FC = () => {
     }
   }, [isAuthenticated]);
 
-  // Real-time subscription for check-ins with allergies/accessibility needs
+  // Real-time subscription for check-ins
   useEffect(() => {
     if (!isAuthenticated) return;
 
@@ -68,24 +82,63 @@ export const AdminView: React.FC = () => {
           const updatedAttendee = payload.new as Attendee;
           const oldAttendee = payload.old as Attendee;
           
+          // Check if this is only a notes/country update (not a check-in change)
+          const isOnlyNotesOrCountryUpdate = oldAttendee && 
+            oldAttendee.checkedIn === updatedAttendee.checkedIn &&
+            (oldAttendee.notes !== updatedAttendee.notes || 
+             oldAttendee.country !== updatedAttendee.country);
+          
+          // Skip alert if this attendee was recently updated by admin (for any update)
+          // OR if this is only a notes/country update (admin likely edited it)
+          if (adminUpdatedAttendees.has(updatedAttendee.id) || isOnlyNotesOrCountryUpdate) {
+            // Just update stats silently, don't show alert
+            setAttendees(prev => prev.map(a => 
+              a.id === updatedAttendee.id ? updatedAttendee : a
+            ));
+            // Also dismiss any existing notifications for this attendee (in case one appeared)
+            setNotifications(prev => prev.filter(n => n.attendee.id !== updatedAttendee.id));
+            return;
+          }
+          
           // Only trigger if check-in status changed from false to true
           if (oldAttendee && !oldAttendee.checkedIn && updatedAttendee.checkedIn) {
+            // Update stats in real-time
+            setAttendees(prev => prev.map(a => 
+              a.id === updatedAttendee.id ? updatedAttendee : a
+            ));
+            
             // Check if attendee has allergy or accessibility needs
             const allergy = updatedAttendee.severeAllergy?.toLowerCase().trim() || '';
             const accessibility = updatedAttendee.accessibilityNeeds?.toLowerCase().trim() || '';
             const hasAllergy = allergy.includes('yes');
             const hasAccessibility = accessibility.includes('yes');
+            const isUrgent = hasAllergy || hasAccessibility;
             
-            if (hasAllergy || hasAccessibility) {
-              // Show alert popup
-              setAlertNotification({
-                show: true,
-                attendee: updatedAttendee
-              });
-              
-              // Reload data to get latest
-              loadData();
+            // Show notification for all check-ins, but highlight those with special needs
+            const notificationId = `notif-${Date.now()}-${Math.random()}`;
+            setNotifications(prev => {
+              const newNotifs = [...prev, {
+                id: notificationId,
+                attendee: updatedAttendee,
+                timestamp: Date.now(),
+                isUrgent: isUrgent,
+                acknowledged: false
+              }];
+              // Keep only last 5 notifications
+              return newNotifs.slice(-5);
+            });
+            
+            // Auto-dismiss after 5 seconds only for non-urgent notifications
+            if (!isUrgent) {
+              setTimeout(() => {
+                setNotifications(prev => prev.filter(n => n.id !== notificationId));
+              }, 5000);
             }
+          } else {
+            // For other updates (like notes, country, etc.), just update the state silently
+            setAttendees(prev => prev.map(a => 
+              a.id === updatedAttendee.id ? updatedAttendee : a
+            ));
           }
         }
       )
@@ -176,11 +229,27 @@ export const AdminView: React.FC = () => {
     const newStatus = !currentStatus;
     const newTime = newStatus ? new Date().toISOString() : undefined;
     
+    // Mark this attendee as admin-updated BEFORE checking in to prevent alerts
+    if (newStatus) {
+      setAdminUpdatedAttendees(prev => new Set(prev).add(id));
+    }
+    
     setAttendees(prev => prev.map(a => 
       a.id === id ? { ...a, checkedIn: newStatus, checkInTime: newTime } : a
     ));
 
     await Storage.checkInAttendee(id, newStatus, newTime);
+    
+    // Remove from admin updated set after 30 seconds to allow future alerts
+    if (newStatus) {
+      setTimeout(() => {
+        setAdminUpdatedAttendees(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(id);
+          return newSet;
+        });
+      }, 30000);
+    }
   };
 
   const openEditModal = (attendee: Attendee) => {
@@ -200,6 +269,12 @@ export const AdminView: React.FC = () => {
   const saveAttendeeFields = async () => {
     if (!editingAttendee) return;
     
+    // Mark this attendee as admin-updated BEFORE saving to prevent alerts
+    setAdminUpdatedAttendees(prev => new Set(prev).add(editingAttendee.id));
+    
+    // Dismiss any existing notifications for this attendee
+    setNotifications(prev => prev.filter(n => n.attendee.id !== editingAttendee.id));
+    
     const success = await Storage.updateAttendeeFields(editingAttendee.id, {
       country: editCountry,
       notes: editNotes
@@ -212,6 +287,15 @@ export const AdminView: React.FC = () => {
           : a
       ));
       closeEditModal();
+      
+      // Remove from admin updated set after 30 seconds to allow future alerts
+      setTimeout(() => {
+        setAdminUpdatedAttendees(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(editingAttendee.id);
+          return newSet;
+        });
+      }, 30000);
     }
   };
 
@@ -250,14 +334,77 @@ export const AdminView: React.FC = () => {
         filterCheckIn === 'all' || 
         (filterCheckIn === 'checked-in' && a.checkedIn) ||
         (filterCheckIn === 'not-checked-in' && !a.checkedIn);
-      return matchesSearch && matchesFilter && matchesCheckIn;
+      
+      // Filter by allergy
+      const allergy = a.severeAllergy?.toLowerCase().trim() || '';
+      const hasAllergy = allergy.includes('yes');
+      const matchesAllergy = 
+        filterAllergy === 'all' ||
+        (filterAllergy === 'yes' && hasAllergy) ||
+        (filterAllergy === 'no' && !hasAllergy);
+      
+      // Filter by accessibility
+      const accessibility = a.accessibilityNeeds?.toLowerCase().trim() || '';
+      const hasAccessibility = accessibility.includes('yes');
+      const matchesAccessibility = 
+        filterAccessibility === 'all' ||
+        (filterAccessibility === 'yes' && hasAccessibility) ||
+        (filterAccessibility === 'no' && !hasAccessibility);
+      
+      return matchesSearch && matchesFilter && matchesCheckIn && matchesAllergy && matchesAccessibility;
     });
-  }, [attendees, searchQuery, filterType, filterCheckIn]);
+  }, [attendees, searchQuery, filterType, filterCheckIn, filterAllergy, filterAccessibility]);
 
   // Reset to page 1 when filters change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, filterType, filterCheckIn]);
+  }, [searchQuery, filterType, filterCheckIn, filterAllergy, filterAccessibility]);
+
+  const handleAcknowledgeNotification = (notificationId: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== notificationId));
+  };
+
+  const handleQuickNote = async (attendee: Attendee) => {
+    if (quickNote.trim()) {
+      // Mark this attendee as admin-updated BEFORE saving to prevent alerts
+      setAdminUpdatedAttendees(prev => new Set(prev).add(attendee.id));
+      
+      // Dismiss any existing notifications for this attendee immediately
+      setNotifications(prev => prev.filter(n => n.attendee.id !== attendee.id));
+      
+      const success = await Storage.updateAttendeeFields(attendee.id, { notes: quickNote });
+      if (success) {
+        setAttendees(prev => prev.map(a => 
+          a.id === attendee.id ? { ...a, notes: quickNote } : a
+        ));
+        setQuickNote('');
+        setQuickNoteModal({ show: false, attendee: null });
+        
+        // Dismiss any notifications that might have appeared during/after save
+        setTimeout(() => {
+          setNotifications(prev => prev.filter(n => n.attendee.id !== attendee.id));
+        }, 100);
+        
+        // Remove from admin updated set after 30 seconds to allow future alerts
+        setTimeout(() => {
+          setAdminUpdatedAttendees(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(attendee.id);
+            return newSet;
+          });
+        }, 30000);
+      } else {
+        // If save failed, remove from admin updated set
+        setAdminUpdatedAttendees(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(attendee.id);
+          return newSet;
+        });
+      }
+    } else {
+      setQuickNoteModal({ show: false, attendee: null });
+    }
+  };
 
   // Pagination logic - always paginate to save bandwidth and improve performance
   const ITEMS_PER_PAGE = 20;
@@ -418,18 +565,32 @@ export const AdminView: React.FC = () => {
               </div>
             </div>
 
-            {/* Quick Report Toggle */}
-            {!loadingData && attendees.length > 0 && (
-              <div className="flex justify-end">
-                <button
-                  onClick={() => setShowQuickReport(!showQuickReport)}
-                  className="flex items-center gap-2 bg-[#10733A] hover:bg-[#10733A]/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-                >
-                  <BarChart3 className="w-4 h-4" />
-                  {showQuickReport ? 'Hide Quick Report' : 'Show Quick Report'}
-                </button>
-              </div>
-            )}
+            <div className="flex justify-end flex-col md:flex-row gap-3">
+              {/* Quick Report Toggle */}
+              {!loadingData && attendees.length > 0 && (
+                  <button
+                    onClick={() => setShowQuickReport(!showQuickReport)}
+                    className="flex items-center gap-2 bg-[#10733A] hover:bg-[#10733A]/90 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <BarChart3 className="w-4 h-4" />
+                    {showQuickReport ? 'Hide Quick Report' : 'Show Quick Report'}
+                  </button>
+              )}
+
+              {/* Check-In History Button */}
+              {!loadingData && attendees.length > 0 && (
+                  <button
+                    onClick={() => setShowHistoryModal(true)}
+                    className="flex items-center gap-2 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2 rounded-lg text-sm font-medium transition-colors border border-slate-200 shadow-sm"
+                  >
+                    <CheckCircle className="w-4 h-4 text-[#10733A]" />
+                    View Check-In History
+                    <span className="text-xs text-slate-400">
+                      ({attendees.filter(a => a.checkedIn && a.checkInTime).length})
+                    </span>
+                  </button>
+              )}
+            </div>
 
             {/* Quick Report */}
             {showQuickReport && !loadingData && attendees.length > 0 && (
@@ -682,10 +843,10 @@ export const AdminView: React.FC = () => {
                   onChange={(e) => setSearchQuery(e.target.value)}
                 />
               </div>
-              <div className="relative w-full md:w-48">
+              <div className="relative w-full md:w-40">
                 <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <select 
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white"
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
                 >
@@ -695,16 +856,40 @@ export const AdminView: React.FC = () => {
                   ))}
                 </select>
               </div>
-              <div className="relative w-full md:w-48">
+              <div className="relative w-full md:w-40">
                 <CheckCircle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <select 
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white"
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
                   value={filterCheckIn}
                   onChange={(e) => setFilterCheckIn(e.target.value)}
                 >
                   <option value="all">All Status</option>
                   <option value="checked-in">Checked In</option>
                   <option value="not-checked-in">Not Checked In</option>
+                </select>
+              </div>
+              <div className="relative w-full md:w-40">
+                <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select 
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
+                  value={filterAllergy}
+                  onChange={(e) => setFilterAllergy(e.target.value)}
+                >
+                  <option value="all">All Allergy</option>
+                  <option value="yes">Has Allergy</option>
+                  <option value="no">No Allergy</option>
+                </select>
+              </div>
+              <div className="relative w-full md:w-40">
+                <AlertTriangle className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <select 
+                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
+                  value={filterAccessibility}
+                  onChange={(e) => setFilterAccessibility(e.target.value)}
+                >
+                  <option value="all">All Accessibility</option>
+                  <option value="yes">Has Needs</option>
+                  <option value="no">No Needs</option>
                 </select>
               </div>
             </div>
@@ -771,23 +956,40 @@ export const AdminView: React.FC = () => {
                             </td>
                             <td className="px-6 py-4">
                               {hasWarning && (
-                                <div className="flex items-center gap-2">
-                                  {hasAllergy && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
-                                      <AlertTriangle className="w-3 h-3" />
-                                      Allergy
-                                    </span>
-                                  )}
-                                  {hasAccessibility && (
-                                    <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
-                                      <AlertTriangle className="w-3 h-3" />
-                                      Accessibility
-                                    </span>
+                                <div className="space-y-2">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    {hasAllergy && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                                        <AlertTriangle className="w-3 h-3" />
+                                        Allergy
+                                      </span>
+                                    )}
+                                    {hasAccessibility && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-100 text-red-700 border border-red-200">
+                                        <AlertTriangle className="w-3 h-3" />
+                                        Accessibility
+                                      </span>
+                                    )}
+                                  </div>
+                                  {attendee.notes && (
+                                    <div className="bg-slate-50 border border-slate-200 rounded p-2">
+                                      <p className="text-xs font-medium text-slate-600 mb-1">Notes:</p>
+                                      <p className="text-xs text-slate-700 whitespace-pre-wrap">{attendee.notes}</p>
+                                    </div>
                                   )}
                                 </div>
                               )}
                               {!hasWarning && (
-                                <span className="text-slate-400 text-xs">—</span>
+                                <div>
+                                  {attendee.notes ? (
+                                    <div className="bg-slate-50 border border-slate-200 rounded p-2">
+                                      <p className="text-xs font-medium text-slate-600 mb-1">Notes:</p>
+                                      <p className="text-xs text-slate-700 whitespace-pre-wrap">{attendee.notes}</p>
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 text-xs">—</span>
+                                  )}
+                                </div>
                               )}
                             </td>
                             <td className="px-6 py-4 text-right">
@@ -960,82 +1162,351 @@ export const AdminView: React.FC = () => {
         )}
       </main>
 
-      {/* Real-time Alert Popup */}
-      {alertNotification.show && alertNotification.attendee && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border-4 border-red-500 animate-scale-in">
-            <div className="bg-red-500 p-6 rounded-t-2xl">
-              <div className="flex items-center gap-3">
-                <div className="bg-white rounded-full p-3">
-                  <AlertTriangle className="w-8 h-8 text-red-600" />
+      {/* Real-time Notification Stack - Bottom Right */}
+      {notifications.length > 0 && (
+        <div className="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
+          {notifications.map((notification, index) => {
+            const hasWarning = notification.isUrgent;
+            const reverseIndex = notifications.length - 1 - index;
+            const allergy = notification.attendee.severeAllergy?.toLowerCase().trim() || '';
+            const accessibility = notification.attendee.accessibilityNeeds?.toLowerCase().trim() || '';
+            const hasAllergy = allergy.includes('yes');
+            const hasAccessibility = accessibility.includes('yes');
+            
+            return (
+              <div
+                key={notification.id}
+                className={`bg-white rounded-lg shadow-xl border-2 animate-scale-in overflow-hidden pointer-events-auto ${
+                  hasWarning ? 'border-red-500' : 'border-green-500'
+                }`}
+                style={{
+                  animationDelay: `${reverseIndex * 0.1}s`
+                }}
+              >
+                <div className={`${hasWarning ? 'bg-red-500' : 'bg-green-500'} p-2`}>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5">
+                      {hasWarning ? (
+                        <AlertTriangle className="w-4 h-4 text-white flex-shrink-0" />
+                      ) : (
+                        <CheckCircle className="w-4 h-4 text-white flex-shrink-0" />
+                      )}
+                      <div>
+                        <h3 className="text-white font-bold text-xs">
+                          {hasWarning ? '⚠️ URGENT' : '✓ Check-In'}
+                        </h3>
+                        <p className="text-white/90 text-[10px]">New Check-In</p>
+                      </div>
+                    </div>
+                    {!hasWarning && (
+                      <button
+                        onClick={() => setNotifications(prev => prev.filter(n => n.id !== notification.id))}
+                        className="text-white/80 hover:text-white transition-colors flex-shrink-0"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div>
-                  <h2 className="text-2xl font-bold text-white">⚠️ URGENT ALERT</h2>
-                  <p className="text-red-100 text-sm">New Check-In Detected</p>
+                
+                <div className="p-2">
+                  <p className="font-semibold text-slate-800 text-xs mb-0.5">
+                    {notification.attendee.firstName} {notification.attendee.lastName}
+                  </p>
+                  <p className="text-[10px] text-slate-600 mb-1.5">
+                    {notification.attendee.ticketType}
+                  </p>
+                  
+                  {hasWarning && (
+                    <div className="bg-red-50 border border-red-200 rounded p-1.5 mb-1.5">
+                      <p className="text-red-900 font-semibold text-[10px] mb-0.5">⚠️ Special Requirements:</p>
+                      <ul className="text-red-800 text-[10px] space-y-0.5">
+                        {hasAllergy && (
+                          <li>• Allergy: {notification.attendee.severeAllergy}</li>
+                        )}
+                        {hasAccessibility && (
+                          <li>• Accessibility: {notification.attendee.accessibilityNeeds}</li>
+                        )}
+                      </ul>
+                      <p className="text-red-700 text-[10px] font-semibold mt-0.5">
+                        👥 Assist immediately
+                      </p>
+                    </div>
+                  )}
+                  
+                  {hasWarning && (
+                    <div className="flex gap-1.5">
+                      <button
+                        onClick={() => {
+                          setQuickNoteModal({ show: true, attendee: notification.attendee });
+                          setQuickNote(notification.attendee.notes || '');
+                        }}
+                        className="flex-1 px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-medium rounded transition-colors"
+                      >
+                        Quick Note
+                      </button>
+                      <button
+                        onClick={() => handleAcknowledgeNotification(notification.id)}
+                        className="flex-1 px-2 py-1 bg-[#10733A] hover:bg-[#10733A]/90 text-white text-[10px] font-medium rounded transition-colors"
+                      >
+                        Acknowledge
+                      </button>
+                    </div>
+                  )}
                 </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Check-In History Modal */}
+      {showHistoryModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] flex flex-col">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+              <h2 className="text-xl font-bold text-slate-800 flex items-center gap-2">
+                <CheckCircle className="w-5 h-5 text-[#10733A]" />
+                Recent Check-In History
+              </h2>
+              <button
+                onClick={() => {
+                  setShowHistoryModal(false);
+                  setHistorySearchQuery('');
+                  setHistoryFilterType('all');
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1">
+              {/* Search and Filter Controls */}
+              <div className="mb-4 space-y-3">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or email..."
+                    value={historySearchQuery}
+                    onChange={(e) => setHistorySearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none text-sm"
+                  />
+                </div>
+                <div className="relative">
+                  <select
+                    value={historyFilterType}
+                    onChange={(e) => setHistoryFilterType(e.target.value)}
+                    className="w-full px-4 py-2 rounded-lg border border-slate-300 focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none appearance-none bg-white text-sm"
+                  >
+                    <option value="all">All Ticket Types</option>
+                    {ticketConfig.activeTypes.map(type => (
+                      <option key={type} value={type}>{type}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              
+              <div className="space-y-3">
+                {(() => {
+                  let checkedInAttendees = attendees
+                    .filter(a => a.checkedIn && a.checkInTime);
+                  
+                  // Apply ticket type filter
+                  if (historyFilterType !== 'all') {
+                    checkedInAttendees = checkedInAttendees.filter(a => 
+                      a.ticketType === historyFilterType
+                    );
+                  }
+                  
+                  // Apply search filter
+                  if (historySearchQuery.trim()) {
+                    const query = historySearchQuery.toLowerCase().trim();
+                    checkedInAttendees = checkedInAttendees.filter(a => {
+                      const fullName = `${a.firstName} ${a.lastName}`.toLowerCase();
+                      const email = (a.email || '').toLowerCase();
+                      return fullName.includes(query) || email.includes(query);
+                    });
+                  }
+                  
+                  // Sort by most recent first
+                  checkedInAttendees.sort((a, b) => {
+                    const timeA = a.checkInTime ? new Date(a.checkInTime).getTime() : 0;
+                    const timeB = b.checkInTime ? new Date(b.checkInTime).getTime() : 0;
+                    return timeB - timeA;
+                  });
+                  
+                  if (checkedInAttendees.length === 0) {
+                    return (
+                      <p className="text-sm text-slate-400 italic text-center py-8">
+                        {historySearchQuery || historyFilterType !== 'all' 
+                          ? 'No check-ins match your filters'
+                          : 'No check-ins yet'}
+                      </p>
+                    );
+                  }
+                  
+                  return checkedInAttendees.map((attendee) => {
+                    const allergy = attendee.severeAllergy?.toLowerCase().trim() || '';
+                    const accessibility = attendee.accessibilityNeeds?.toLowerCase().trim() || '';
+                    const hasAllergy = allergy.includes('yes');
+                    const hasAccessibility = accessibility.includes('yes');
+                    const hasWarning = hasAllergy || hasAccessibility;
+                    
+                    const checkInDate = attendee.checkInTime 
+                      ? new Date(attendee.checkInTime)
+                      : null;
+                    const timeString = checkInDate 
+                      ? checkInDate.toLocaleTimeString('en-US', { 
+                          hour: '2-digit', 
+                          minute: '2-digit',
+                          second: '2-digit',
+                          hour12: true 
+                        })
+                      : 'Unknown';
+                    const dateString = checkInDate
+                      ? checkInDate.toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric'
+                        })
+                      : '';
+                    
+                    return (
+                      <div
+                        key={attendee.id}
+                        className={`flex items-center justify-between p-3 rounded-lg border ${
+                          hasWarning 
+                            ? 'bg-red-50/30 border-red-200' 
+                            : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className="font-semibold text-slate-800 text-sm">
+                              {attendee.firstName} {attendee.lastName}
+                            </p>
+                            {hasWarning && (
+                              <AlertTriangle className="w-4 h-4 text-red-600 flex-shrink-0" />
+                            )}
+                          </div>
+                          <div className="flex items-center gap-3 text-xs text-slate-600">
+                            <span>{attendee.ticketType}</span>
+                            <span>•</span>
+                            <span>{timeString}</span>
+                            {dateString && (
+                              <>
+                                <span>•</span>
+                                <span>{dateString}</span>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          {hasWarning && (
+                            <div className="flex items-center gap-1">
+                              {hasAllergy && (
+                                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded border border-red-200">
+                                  Allergy
+                                </span>
+                              )}
+                              {hasAccessibility && (
+                                <span className="px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded border border-red-200">
+                                  Accessibility
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          <CheckCircle className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
             
-            <div className="p-6">
-              <div className="mb-4">
-                <p className="text-lg font-semibold text-slate-800 mb-2">
-                  {alertNotification.attendee.firstName} {alertNotification.attendee.lastName}
-                </p>
-                <p className="text-sm text-slate-600 mb-1">
-                  <span className="font-medium">Email:</span> {alertNotification.attendee.email}
-                </p>
-                <p className="text-sm text-slate-600 mb-1">
-                  <span className="font-medium">Ticket:</span> {alertNotification.attendee.ticketType}
-                </p>
+            <div className="p-4 border-t border-slate-200 flex-shrink-0">
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setShowHistoryModal(false);
+                    setHistorySearchQuery('');
+                    setHistoryFilterType('all');
+                  }}
+                  className="flex-1 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
+                >
+                  Close
+                </button>
+                {(historySearchQuery || historyFilterType !== 'all') && (
+                  <button
+                    onClick={() => {
+                      setHistorySearchQuery('');
+                      setHistoryFilterType('all');
+                    }}
+                    className="px-4 py-2 bg-[#10733A] hover:bg-[#10733A]/90 text-white font-medium rounded-lg transition-colors"
+                  >
+                    Clear Filters
+                  </button>
+                )}
               </div>
-              
-              <div className="bg-red-50 border-2 border-red-200 rounded-lg p-4 mb-4">
-                <p className="text-red-900 font-semibold mb-2">⚠️ Special Requirements:</p>
-                <ul className="text-red-800 text-sm space-y-1">
-                  {(() => {
-                    const allergy = alertNotification.attendee.severeAllergy?.toLowerCase().trim() || '';
-                    const accessibility = alertNotification.attendee.accessibilityNeeds?.toLowerCase().trim() || '';
-                    const hasAllergy = allergy.includes('yes');
-                    const hasAccessibility = accessibility.includes('yes');
-                    
-                    return (
-                      <>
-                        {hasAllergy && (
-                          <li className="flex items-start gap-2">
-                            <span className="font-bold">•</span>
-                            <span><strong>Severe Allergy:</strong> {alertNotification.attendee.severeAllergy}</span>
-                          </li>
-                        )}
-                        {hasAccessibility && (
-                          <li className="flex items-start gap-2">
-                            <span className="font-bold">•</span>
-                            <span><strong>Accessibility Needs:</strong> {alertNotification.attendee.accessibilityNeeds}</span>
-                          </li>
-                        )}
-                        {alertNotification.attendee.notes && (
-                          <li className="flex items-start gap-2 mt-2 pt-2 border-t border-red-200">
-                            <span className="font-bold">•</span>
-                            <span><strong>Notes:</strong> {alertNotification.attendee.notes}</span>
-                          </li>
-                        )}
-                      </>
-                    );
-                  })()}
-                </ul>
-              </div>
-              
-              <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                <p className="text-yellow-900 text-sm font-semibold text-center">
-                  👥 Please contact staff immediately to assist this attendee
-                </p>
-              </div>
-              
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick Note Modal */}
+      {quickNoteModal.show && quickNoteModal.attendee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full">
+            <div className="p-6 border-b border-slate-200 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-slate-800">
+                Quick Note: {quickNoteModal.attendee.firstName} {quickNoteModal.attendee.lastName}
+              </h2>
               <button
-                onClick={() => setAlertNotification({ show: false, attendee: null })}
-                className="w-full bg-[#10733A] hover:bg-[#10733A]/90 text-white font-semibold py-3 rounded-xl transition-colors"
+                onClick={() => {
+                  setQuickNoteModal({ show: false, attendee: null });
+                  setQuickNote('');
+                }}
+                className="text-slate-400 hover:text-slate-600 transition-colors"
               >
-                Acknowledged
+                <X className="w-5 h-5" />
               </button>
+            </div>
+            
+            <div className="p-6 space-y-4">
+              <div>
+                <label className="text-sm font-semibold text-slate-700 mb-2 block">
+                  Add Note
+                </label>
+                <textarea
+                  value={quickNote}
+                  onChange={(e) => setQuickNote(e.target.value)}
+                  placeholder="Add a quick note about this attendee..."
+                  rows={4}
+                  className="w-full px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg focus:border-[#11723A]/60 focus:ring-2 focus:ring-[#11723A]/10 outline-none transition-all resize-none"
+                  autoFocus
+                />
+              </div>
+              
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    setQuickNoteModal({ show: false, attendee: null });
+                    setQuickNote('');
+                  }}
+                  className="flex-1 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleQuickNote(quickNoteModal.attendee!)}
+                  className="flex-1 px-4 py-2.5 bg-[#10733A] hover:bg-[#10733A]/90 text-white font-medium rounded-lg transition-colors"
+                >
+                  Save Note
+                </button>
+              </div>
             </div>
           </div>
         </div>
