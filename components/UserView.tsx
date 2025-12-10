@@ -417,11 +417,11 @@ export const UserView: React.FC = () => {
               </button>
             </div>
           )}
-        </div>
+        </div> 
         
         {/* Footer */}
         <div className="bg-slate-50 p-4 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400">Powered by EventFlow</p>
+          <p className="text-xs text-slate-400">#WCBKK2025</p>
         </div>
       </div>
     </div>
