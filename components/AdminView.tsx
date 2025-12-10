@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, Settings, Upload, CheckCircle, Search, 
-  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, AlertTriangle, Edit2, X
+  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, AlertTriangle, Edit2, X, ChevronLeft, ChevronRight
 } from 'lucide-react';
 import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
@@ -25,6 +25,7 @@ export const AdminView: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
   const [filterCheckIn, setFilterCheckIn] = useState<string>('all'); // 'all', 'checked-in', 'not-checked-in'
+  const [currentPage, setCurrentPage] = useState(1);
   const [loadingData, setLoadingData] = useState(false);
   const [showQuickReport, setShowQuickReport] = useState(false);
   const [editingAttendee, setEditingAttendee] = useState<Attendee | null>(null);
@@ -201,6 +202,19 @@ export const AdminView: React.FC = () => {
       return matchesSearch && matchesFilter && matchesCheckIn;
     });
   }, [attendees, searchQuery, filterType, filterCheckIn]);
+
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, filterType, filterCheckIn]);
+
+  // Pagination logic - always paginate to save bandwidth and improve performance
+  const ITEMS_PER_PAGE = 20;
+  const totalPages = Math.ceil(filteredAttendees.length / ITEMS_PER_PAGE);
+  const paginatedAttendees = filteredAttendees.slice(
+    (currentPage - 1) * ITEMS_PER_PAGE,
+    currentPage * ITEMS_PER_PAGE
+  );
 
   const allTicketTypes = useMemo(() => {
     return Array.from(new Set(attendees.map(a => a.ticketType))).sort();
@@ -672,7 +686,7 @@ export const AdminView: React.FC = () => {
                         </td>
                       </tr>
                     ) : ( 
-                      filteredAttendees.map((attendee) => {
+                      paginatedAttendees.map((attendee) => {
                         const allergy = attendee.severeAllergy?.toLowerCase().trim() || '';
                         const accessibility = attendee.accessibilityNeeds?.toLowerCase().trim() || '';
                         const hasAllergy = allergy.includes('yes');
@@ -761,6 +775,69 @@ export const AdminView: React.FC = () => {
                 </table>
               </div>
             </div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="flex items-center justify-between bg-white px-6 py-4 rounded-xl border border-slate-200 shadow-sm">
+                <div className="text-sm text-slate-600">
+                  Showing <span className="font-medium">{(currentPage - 1) * ITEMS_PER_PAGE + 1}</span> to{' '}
+                  <span className="font-medium">
+                    {Math.min(currentPage * ITEMS_PER_PAGE, filteredAttendees.length)}
+                  </span>{' '}
+                  of <span className="font-medium">{filteredAttendees.length}</span> {searchQuery.trim() ? 'results' : 'attendees'}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                    disabled={currentPage === 1}
+                    className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                    Previous
+                  </button>
+                  <div className="flex items-center gap-1">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1)
+                      .filter(page => {
+                        // Show first page, last page, current page, and pages around current
+                        return (
+                          page === 1 ||
+                          page === totalPages ||
+                          (page >= currentPage - 1 && page <= currentPage + 1)
+                        );
+                      })
+                      .map((page, index, array) => {
+                        // Add ellipsis if there's a gap
+                        const showEllipsisBefore = index > 0 && array[index] - array[index - 1] > 1;
+                        return (
+                          <React.Fragment key={page}>
+                            {showEllipsisBefore && (
+                              <span className="px-2 text-slate-400">...</span>
+                            )}
+                            <button
+                              onClick={() => setCurrentPage(page)}
+                              className={`px-3 py-2 rounded-lg border transition-colors ${
+                                currentPage === page
+                                  ? 'bg-[#10733A] text-white border-[#10733A]'
+                                  : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
+                              }`}
+                            >
+                              {page}
+                            </button>
+                          </React.Fragment>
+                        );
+                      })}
+                  </div>
+                  <button
+                    onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                    disabled={currentPage === totalPages}
+                    className="px-3 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+                  >
+                    Next
+                    <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

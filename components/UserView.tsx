@@ -203,7 +203,7 @@ export const UserView: React.FC = () => {
           />
             </div>
             <h1 className="text-2xl font-bold text-white">WordCamp Bangkok 2025</h1>
-            <p className="text-white text-sm mt-1">Please enter your email to check in</p>
+            <p className="text-white text-sm mt-1">Please enter your email to self check in</p>
           </div>
         </div>
 
