@@ -9,7 +9,13 @@ CREATE TABLE IF NOT EXISTS attendees (
   email TEXT NOT NULL,
   "ticketType" TEXT NOT NULL,
   "checkedIn" BOOLEAN DEFAULT FALSE,
-  "checkInTime" TIMESTAMPTZ
+  "checkInTime" TIMESTAMPTZ,
+  "purchaseDate" TEXT,
+  country TEXT,
+  "severeAllergy" TEXT,
+  "accessibilityNeeds" TEXT,
+  "firstTimeAttending" TEXT,
+  notes TEXT
 );
 
 -- Create ticket_config table

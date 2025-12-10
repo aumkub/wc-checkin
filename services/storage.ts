@@ -126,7 +126,18 @@ export const parseCSV = (csvText: string): Attendee[] => {
   
   const attendees: Attendee[] = [];
   
+  // Detect delimiter - check if first line contains tabs
+  const firstLine = lines[0] || '';
+  const useTabs = firstLine.includes('\t');
+  const delimiter = useTabs ? '\t' : ',';
+  
   const splitCSVLine = (line: string) => {
+    // If using tabs, simple split works (tabs don't need quote handling like commas)
+    if (useTabs) {
+      return line.split(delimiter).map(v => v.trim().replace(/^"|"$/g, ''));
+    }
+    
+    // For commas, handle quoted values
     const result = [];
     let current = '';
     let inQuotes = false;
@@ -134,7 +145,7 @@ export const parseCSV = (csvText: string): Attendee[] => {
       const char = line[i];
       if (char === '"') {
         inQuotes = !inQuotes;
-      } else if (char === ',' && !inQuotes) {
+      } else if (char === delimiter && !inQuotes) {
         result.push(current.trim());
         current = '';
       } else {
@@ -150,17 +161,61 @@ export const parseCSV = (csvText: string): Attendee[] => {
     if (!currentLine) continue;
     const values = splitCSVLine(currentLine);
     
-    // Default format: ID, Ticket Type, First Name, Last Name, Email
+    // New format: Attendee ID, Ticket Type, First Name, Last Name, E-mail Address,
+    // Purchase date, Where you live or where you're from?, Severe allergy, 
+    // Accessibility needs, First Time Attending, Notes
     if (values.length >= 5) {
-      attendees.push({
+      const attendee: Attendee = {
         id: values[0] || Math.random().toString(36).substr(2, 9),
-        ticketType: values[1].replace(/^"|"$/g, ''), 
-        firstName: values[2],
-        lastName: values[3],
-        email: values[4],
+        ticketType: values[1]?.replace(/^"|"$/g, '') || '', 
+        firstName: values[2] || '',
+        lastName: values[3] || '',
+        email: values[4] || '',
         checkedIn: false
-      });
+      };
+      
+      // Add optional fields if present
+      if (values.length > 5) attendee.purchaseDate = values[5]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 6) attendee.country = values[6]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 7) attendee.severeAllergy = values[7]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 8) attendee.accessibilityNeeds = values[8]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 9) attendee.firstTimeAttending = values[9]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 10) attendee.notes = values[10]?.replace(/^"|"$/g, '') || '';
+      
+      attendees.push(attendee);
     }
   }
   return attendees;
+};
+
+export const updateAttendeeFields = async (
+  id: string, 
+  fields: { country?: string; notes?: string }
+) => {
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .update(fields)
+    .eq('id', id);
+
+  if (error) {
+    console.error('Supabase updateAttendeeFields error', error);
+    return false;
+  }
+
+  return true;
+};
+
+export const updateAttendeeCountryByEmail = async (email: string, country: string) => {
+  const normalized = normalizeEmail(email);
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .update({ country })
+    .eq('email', normalized);
+
+  if (error) {
+    console.error('Supabase updateAttendeeCountryByEmail error', error);
+    return false;
+  }
+
+  return true;
 };
