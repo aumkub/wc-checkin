@@ -1,8 +1,9 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { QrCode, Mail, CheckCircle2, AlertCircle, ArrowRight, Search, AlertTriangle } from 'lucide-react';
 import { Attendee, CheckInResult } from '../types';
 import * as Storage from '../services/storage';
 import { COUNTRIES } from '../constants/countries';
+import QRCode from 'qrcode';
 
 export const UserView: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -14,6 +15,7 @@ export const UserView: React.FC = () => {
   const [savingCountry, setSavingCountry] = useState(false);
   const [pendingCheckIn, setPendingCheckIn] = useState<{ email: string; validTickets: Attendee[] } | null>(null);
   const [checkedInTickets, setCheckedInTickets] = useState<Attendee[]>([]);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
 
   const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,6 +61,18 @@ export const UserView: React.FC = () => {
           alreadyCheckedIn: true
         });
         setSelectedCountry(firstTicket.country || '');
+        
+        // Generate QR code for already checked-in users
+        const token = Storage.generateSecureToken(firstTicket.id, email);
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+        const qrUrl = `${baseUrl}#/swag/${token}`;
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
+          setQrCodeDataUrl(qrDataUrl);
+        } catch (qrError) {
+          console.error('QR Code generation error', qrError);
+        }
+        
         setLoading(false);
         return;
       }
@@ -104,12 +118,25 @@ export const UserView: React.FC = () => {
         });
         setSelectedCountry(attendee.country || '');
         setPendingCheckIn(null);
+        
+        // Generate QR code with secure token
+        const token = Storage.generateSecureToken(attendee.id, email);
+        // Use hash router format for the QR code URL
+        const baseUrl = window.location.origin + window.location.pathname.replace(/\/$/, '');
+        const qrUrl = `${baseUrl}#/swag/${token}`;
+        try {
+          const qrDataUrl = await QRCode.toDataURL(qrUrl, { width: 300, margin: 2 });
+          setQrCodeDataUrl(qrDataUrl);
+        } catch (qrError) {
+          console.error('QR Code generation error', qrError);
+        }
       } else {
         setResult({
           success: false,
           message: "A database error occurred during check-in. Please try again or contact support."
         });
         setCheckedInTickets([]);
+        setQrCodeDataUrl(null);
       }
     } catch (error) {
       console.error("Checkin Error", error);
@@ -118,6 +145,7 @@ export const UserView: React.FC = () => {
         message: "An unexpected error occurred."
       });
       setCheckedInTickets([]);
+      setQrCodeDataUrl(null);
     } finally {
       setLoading(false);
     }
@@ -131,6 +159,7 @@ export const UserView: React.FC = () => {
     setShowCountrySelector(false);
     setPendingCheckIn(null);
     setCheckedInTickets([]);
+    setQrCodeDataUrl(null);
   };
 
   const filteredCountries = useMemo(() => {
@@ -406,6 +435,24 @@ export const UserView: React.FC = () => {
               {result.success && selectedCountry && (
                 <div className="mb-6 text-sm text-slate-600">
                   <span className="font-medium">Country:</span> {selectedCountry}
+                </div>
+              )}
+
+              {result.success && qrCodeDataUrl && (
+                <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
+                  <div className="text-center">
+                    <p className="text-sm font-semibold text-slate-700 mb-3">Your Check-In QR Code</p>
+                    <div className="flex justify-center mb-2">
+                      <img 
+                        src={qrCodeDataUrl} 
+                        alt="Check-in QR Code" 
+                        className="w-48 h-48 border-4 border-white rounded-lg shadow-md"
+                      />
+                    </div>
+                    <p className="text-xs text-slate-500 mt-2">
+                      Show this QR code at the swag station to receive your items
+                    </p>
+                  </div>
                 </div>
               )}
 

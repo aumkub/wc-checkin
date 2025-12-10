@@ -12,6 +12,7 @@ export interface Attendee {
   accessibilityNeeds?: string; // Accessibility needs answer
   firstTimeAttending?: string; // First Time Attending answer
   notes?: string; // Notes field
+  swagReceived?: boolean; // Whether the user has received swag
 }
 
 export interface TicketConfig {

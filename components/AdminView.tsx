@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Users, Settings, Upload, CheckCircle, Search, 
-  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, AlertTriangle, Edit2, X, ChevronLeft, ChevronRight
+  Filter, XCircle, BarChart3, RefreshCw, Database, Lock, AlertTriangle, Edit2, X, ChevronLeft, ChevronRight, Camera, Gift
 } from 'lucide-react';
 import { Attendee, TicketConfig } from '../types';
 import * as Storage from '../services/storage';
 import { COUNTRIES } from '../constants/countries';
 import { supabase } from '../services/supabaseClient';
+import { SwagScanView } from './SwagScanView';
 
 // Get passwords from environment variables for security
 const ADMIN_PASSWORD = (import.meta.env.VITE_ADMIN_PASSWORD as string | undefined) || 'jmgd68f4';
@@ -58,6 +59,7 @@ export const AdminView: React.FC = () => {
   const [adminUpdatedAttendees, setAdminUpdatedAttendees] = useState<Set<string>>(new Set());
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historyFilterType, setHistoryFilterType] = useState<string>('all');
+  const [showSwagScanner, setShowSwagScanner] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -582,6 +584,17 @@ export const AdminView: React.FC = () => {
             </div>
 
             <div className="flex justify-end flex-col md:flex-row gap-3">
+              {/* QR Scanner Button */}
+              {!loadingData && attendees.length > 0 && (
+                  <button
+                    onClick={() => setShowSwagScanner(true)}
+                    className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+                  >
+                    <Camera className="w-4 h-4" />
+                    Scan QR for Swag
+                  </button>
+              )}
+
               {/* Quick Report Toggle */}
               {!loadingData && attendees.length > 0 && (
                   <button
@@ -920,20 +933,21 @@ export const AdminView: React.FC = () => {
                       <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Email</th>
                       <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Country</th>
                       <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider">Alerts</th>
+                      <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-center">Swag</th>
                       <th className="px-6 py-3 text-xs font-semibold text-slate-500 uppercase tracking-wider text-right">Status</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {loadingData ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                            <RefreshCw className="w-6 h-6 animate-spin mx-auto mb-2" />
                            Loading data...
                         </td>
                       </tr>
                     ) : filteredAttendees.length === 0 ? (
                       <tr>
-                        <td colSpan={5} className="px-6 py-12 text-center text-slate-400">
+                        <td colSpan={6} className="px-6 py-12 text-center text-slate-400">
                           No attendees found.
                         </td>
                       </tr>
@@ -1007,6 +1021,29 @@ export const AdminView: React.FC = () => {
                                   )}
                                 </div>
                               )}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              <button
+                                onClick={async () => {
+                                  const newSwagStatus = !attendee.swagReceived;
+                                  const success = await Storage.updateSwagReceived(attendee.id, newSwagStatus);
+                                  if (success) {
+                                    setAttendees(prev => prev.map(a => 
+                                      a.id === attendee.id ? { ...a, swagReceived: newSwagStatus } : a
+                                    ));
+                                  }
+                                }}
+                                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                                  attendee.swagReceived 
+                                    ? 'bg-purple-100 text-purple-700 hover:bg-purple-200 border border-purple-200' 
+                                    : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+                                }`}
+                                disabled={!attendee.checkedIn}
+                                title={!attendee.checkedIn ? 'Attendee must check in first' : 'Toggle swag received'}
+                              >
+                                <Gift className="w-4 h-4" />
+                                {attendee.swagReceived ? 'Received' : 'Not Received'}
+                              </button>
                             </td>
                             <td className="px-6 py-4 text-right">
                               <div className="flex items-center justify-end gap-2">
@@ -1744,6 +1781,18 @@ export const AdminView: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Swag QR Scanner Modal */}
+      {showSwagScanner && (
+        <SwagScanView
+          onScanSuccess={(attendee) => {
+            setAttendees(prev => prev.map(a => 
+              a.id === attendee.id ? attendee : a
+            ));
+          }}
+          onClose={() => setShowSwagScanner(false)}
+        />
       )}
     </div>
   );

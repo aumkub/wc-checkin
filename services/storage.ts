@@ -219,3 +219,67 @@ export const updateAttendeeCountryByEmail = async (email: string, country: strin
 
   return true;
 };
+
+export const updateSwagReceived = async (id: string, swagReceived: boolean) => {
+  const { error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .update({ swagReceived })
+    .eq('id', id);
+
+  if (error) {
+    console.error('Supabase updateSwagReceived error', error);
+    return false;
+  }
+
+  return true;
+};
+
+export const getAttendeeById = async (id: string): Promise<Attendee | null> => {
+  const { data, error } = await supabase
+    .from(TABLE_ATTENDEES)
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Supabase getAttendeeById error', error);
+    return null;
+  }
+
+  return data;
+};
+
+// Generate a secure token for QR code
+export const generateSecureToken = (attendeeId: string, email: string): string => {
+  // Create a simple token using base64 encoding of attendeeId + timestamp + email hash
+  const timestamp = Date.now();
+  const secret = import.meta.env.VITE_QR_SECRET || 'wc-bkk-2025-secret';
+  const data = `${attendeeId}|${timestamp}|${email}|${secret}`;
+  return btoa(data).replace(/[+/=]/g, (char) => {
+    return char === '+' ? '-' : char === '/' ? '_' : '';
+  });
+};
+
+// Verify and decode token
+export const verifyToken = (token: string): { attendeeId: string; email: string; timestamp: number } | null => {
+  try {
+    const decoded = atob(token.replace(/[-_]/g, (char) => {
+      return char === '-' ? '+' : char === '_' ? '/' : '=';
+    }));
+    const parts = decoded.split('|');
+    if (parts.length !== 4) return null;
+    
+    const [attendeeId, timestampStr, email, secret] = parts;
+    const expectedSecret = import.meta.env.VITE_QR_SECRET || 'wc-bkk-2025-secret';
+    
+    if (secret !== expectedSecret) return null;
+    
+    const timestamp = parseInt(timestampStr, 10);
+    // Token expires after 24 hours
+    if (Date.now() - timestamp > 24 * 60 * 60 * 1000) return null;
+    
+    return { attendeeId, email, timestamp };
+  } catch {
+    return null;
+  }
+};

@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS attendees (
   "severeAllergy" TEXT,
   "accessibilityNeeds" TEXT,
   "firstTimeAttending" TEXT,
-  notes TEXT
+  notes TEXT,
+  "swagReceived" BOOLEAN DEFAULT FALSE
 );
 
 -- Create ticket_config table
