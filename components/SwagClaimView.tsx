@@ -43,23 +43,7 @@ export const SwagClaimView: React.FC = () => {
       }
 
       setAttendee(attendeeData);
-
-      // If swag already received, show success
-      if (attendeeData.swagReceived) {
-        setSuccess(true);
-        setLoading(false);
-        return;
-      }
-
-      // Mark swag as received
-      const updateSuccess = await Storage.updateSwagReceived(attendeeData.id, true);
-      if (updateSuccess) {
-        setSuccess(true);
-        setAttendee({ ...attendeeData, swagReceived: true });
-      } else {
-        setError('Failed to update swag status. Please contact support.');
-      }
-
+      setSuccess(true); // Show success view with status
       setLoading(false);
     };
 
@@ -108,26 +92,46 @@ export const SwagClaimView: React.FC = () => {
             </div>
           ) : success && attendee ? (
             <div className="text-center animate-fade-in">
-              <div className="w-20 h-20 mx-auto rounded-full bg-green-100 text-green-600 flex items-center justify-center mb-4">
-                <Gift className="w-10 h-10" />
+              <div className={`w-20 h-20 mx-auto rounded-full flex items-center justify-center mb-4 ${
+                attendee.swagReceived ? 'bg-green-100 text-green-600' : 'bg-blue-100 text-blue-600'
+              }`}>
+                {attendee.swagReceived ? (
+                  <CheckCircle2 className="w-10 h-10" />
+                ) : (
+                  <Gift className="w-10 h-10" />
+                )}
               </div>
               <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                {attendee.swagReceived ? 'Swag Already Claimed!' : 'Swag Claimed!'}
+                {attendee.swagReceived ? 'Swag Already Received!' : 'QR Code Verified'}
               </h2>
               <p className="text-slate-600 mb-4">
                 {attendee.firstName} {attendee.lastName}
               </p>
-              <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-6">
-                <div className="flex items-center justify-center gap-2 mb-2">
-                  <CheckCircle2 className="w-5 h-5 text-green-600" />
-                  <p className="text-green-900 font-semibold">
-                    {attendee.swagReceived ? 'You have already received your swag!' : 'Your swag has been marked as received!'}
+              {attendee.swagReceived ? (
+                <div className="bg-green-50 border-2 border-green-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                    <p className="text-green-900 font-semibold">
+                      You have already received your swag!
+                    </p>
+                  </div>
+                  <p className="text-green-800 text-sm">
+                    Thank you for attending WordCamp Bangkok 2025!
                   </p>
                 </div>
-                <p className="text-green-800 text-sm">
-                  Please proceed to the swag station to collect your items.
-                </p>
-              </div>
+              ) : (
+                <div className="bg-blue-50 border-2 border-blue-200 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <Gift className="w-5 h-5 text-blue-600" />
+                    <p className="text-blue-900 font-semibold">
+                      Please visit the Swag Station
+                    </p>
+                  </div>
+                  <p className="text-blue-800 text-sm">
+                    Show this QR code to the staff at the swag station. They will scan it to mark your swag as received.
+                  </p>
+                </div>
+              )}
               <button
                 onClick={() => navigate('/')}
                 className="text-slate-500 hover:text-slate-800 font-medium text-sm transition-colors flex items-center gap-2 mx-auto"
