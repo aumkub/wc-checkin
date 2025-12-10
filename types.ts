@@ -25,4 +25,5 @@ export interface CheckInResult {
   message: string;
   attendee?: Attendee;
   checkedInTypes?: string[];
+  alreadyCheckedIn?: boolean;
 }

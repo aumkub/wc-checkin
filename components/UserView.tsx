@@ -45,6 +45,24 @@ export const UserView: React.FC = () => {
         return;
       }
 
+      // 3.5. Check if all valid tickets are already checked in
+      const allCheckedIn = validTicketsForToday.every(t => t.checkedIn === true);
+      if (allCheckedIn) {
+        // Show already checked in message
+        const firstTicket = validTicketsForToday[0];
+        setCheckedInTickets(validTicketsForToday);
+        setResult({
+          success: true,
+          message: "You are already checked in!",
+          attendee: firstTicket,
+          checkedInTypes: validTicketsForToday.map(t => t.ticketType),
+          alreadyCheckedIn: true
+        });
+        setSelectedCountry(firstTicket.country || '');
+        setLoading(false);
+        return;
+      }
+
       // 4. Check if any ticket has a country set
       const hasCountry = validTicketsForToday.some(t => t.country && t.country.trim() !== '');
 
@@ -307,12 +325,28 @@ export const UserView: React.FC = () => {
               </div>
               
               <h2 className="text-2xl font-bold text-slate-800 mb-2">
-                {result.success ? `Welcome, ${result.attendee?.firstName}!` : 'Check-In Failed'}
+                {result.success 
+                  ? (result.alreadyCheckedIn 
+                      ? `Hello, ${result.attendee?.firstName}!` 
+                      : `Welcome, ${result.attendee?.firstName}!`)
+                  : 'Check-In Failed'}
               </h2>
               
-              <p className="text-slate-600 mb-6 leading-relaxed">
-                {result.message}
-              </p>
+              {result.alreadyCheckedIn ? (
+                <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6">
+                  <div className="flex items-center justify-center gap-2 mb-2">
+                    <CheckCircle2 className="w-5 h-5 text-blue-600" />
+                    <p className="text-blue-900 font-semibold text-base">You Are Already Checked In</p>
+                  </div>
+                  <p className="text-blue-800 text-sm">
+                    Your check-in was completed successfully. No further action is needed.
+                  </p>
+                </div>
+              ) : (
+                <p className="text-slate-600 mb-6 leading-relaxed">
+                  {result.message}
+                </p>
+              )}
 
               {result.success && result.checkedInTypes && (
                 <div className="bg-slate-50 rounded-lg p-4 mb-6 border border-slate-100">
@@ -327,7 +361,7 @@ export const UserView: React.FC = () => {
                 </div>
               )}
 
-              {result.success && hasWarning && (
+              {result.success && hasWarning && !result.alreadyCheckedIn && (
                 <div className="bg-red-50 border-4 border-red-500 rounded-lg p-5 mb-6 animate-fade-in shadow-lg shadow-red-200/50">
                   <div className="flex items-start gap-3">
                     <div className="flex-1">

@@ -124,8 +124,8 @@ export const AdminView: React.FC = () => {
                 isUrgent: isUrgent,
                 acknowledged: false
               }];
-              // Keep only last 5 notifications
-              return newNotifs.slice(-5);
+              // Keep only last 3 notifications
+              return newNotifs.slice(-3);
             });
             
             // Auto-dismiss after 5 seconds only for non-urgent notifications
@@ -497,10 +497,8 @@ export const AdminView: React.FC = () => {
       {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10 px-4 py-4 md:px-8 flex justify-between items-center shadow-sm">
         <div className="flex items-center gap-2">
-          <div className="bg-[#10733A] p-2 rounded-lg">
-            <Settings className="w-5 h-5 text-white" />
-          </div>
-          <h1 className="text-xl font-bold text-slate-800">Admin Panel</h1>
+          <img src="/wapuu.webp" alt="Wapuu" className="w-10 h-10" />
+          <h1 className="text-xl font-bold text-slate-800">WordCamp Bangkok 2025</h1>
         </div>
         <div className="flex bg-slate-100 p-1 rounded-lg">
           <button 
@@ -1182,7 +1180,7 @@ export const AdminView: React.FC = () => {
 
       {/* Real-time Notification Stack - Bottom Right */}
       {notifications.length > 0 && (
-        <div className="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
+        <div className="fixed bottom-20 sm:bottom-4 right-4 z-[100] flex flex-col-reverse gap-2 max-w-xs w-full pointer-events-none">
           {notifications.map((notification, index) => {
             const hasWarning = notification.isUrgent;
             const reverseIndex = notifications.length - 1 - index;
