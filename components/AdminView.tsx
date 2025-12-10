@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   Users, Settings, Upload, CheckCircle, Search, 
   Filter, XCircle, BarChart3, RefreshCw, Database, Lock, AlertTriangle, Edit2, X, ChevronLeft, ChevronRight, Camera, Gift
@@ -57,9 +57,15 @@ export const AdminView: React.FC = () => {
   const [filterAccessibility, setFilterAccessibility] = useState<string>('all'); // 'all', 'yes', 'no'
   const [showHistoryModal, setShowHistoryModal] = useState(false);
   const [adminUpdatedAttendees, setAdminUpdatedAttendees] = useState<Set<string>>(new Set());
+  const adminUpdatedAttendeesRef = useRef<Set<string>>(new Set());
   const [historySearchQuery, setHistorySearchQuery] = useState('');
   const [historyFilterType, setHistoryFilterType] = useState<string>('all');
   const [showSwagScanner, setShowSwagScanner] = useState(false);
+  
+  // Keep ref in sync with state
+  useEffect(() => {
+    adminUpdatedAttendeesRef.current = adminUpdatedAttendees;
+  }, [adminUpdatedAttendees]);
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -72,7 +78,11 @@ export const AdminView: React.FC = () => {
     if (!isAuthenticated) return;
 
     const channel = supabase
-      .channel('attendees-checkin-alerts')
+      .channel('attendees-checkin-alerts', {
+        config: {
+          broadcast: { self: true }
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -84,31 +94,30 @@ export const AdminView: React.FC = () => {
           const updatedAttendee = payload.new as Attendee;
           const oldAttendee = payload.old as Attendee;
           
-          // Check if this is only a notes/country update (not a check-in change)
-          const isOnlyNotesOrCountryUpdate = oldAttendee && 
+          if (!oldAttendee || !updatedAttendee) return;
+          
+          // Always update the attendees list with latest data
+          setAttendees(prev => prev.map(a => 
+            a.id === updatedAttendee.id ? updatedAttendee : a
+          ));
+          
+          // Check if this is only a notes/country/swag update (not a check-in change)
+          const isOnlyNotesOrCountryOrSwagUpdate = 
             oldAttendee.checkedIn === updatedAttendee.checkedIn &&
             (oldAttendee.notes !== updatedAttendee.notes || 
-             oldAttendee.country !== updatedAttendee.country);
+             oldAttendee.country !== updatedAttendee.country ||
+             oldAttendee.swagReceived !== updatedAttendee.swagReceived);
           
           // Skip alert if this attendee was recently updated by admin (for any update)
-          // OR if this is only a notes/country update (admin likely edited it)
-          if (adminUpdatedAttendees.has(updatedAttendee.id) || isOnlyNotesOrCountryUpdate) {
-            // Just update stats silently, don't show alert
-            setAttendees(prev => prev.map(a => 
-              a.id === updatedAttendee.id ? updatedAttendee : a
-            ));
+          // OR if this is only a notes/country/swag update (admin likely edited it)
+          if (adminUpdatedAttendeesRef.current.has(updatedAttendee.id) || isOnlyNotesOrCountryOrSwagUpdate) {
             // Also dismiss any existing notifications for this attendee (in case one appeared)
             setNotifications(prev => prev.filter(n => n.attendee.id !== updatedAttendee.id));
             return;
           }
           
-          // Only trigger if check-in status changed from false to true
-          if (oldAttendee && !oldAttendee.checkedIn && updatedAttendee.checkedIn) {
-            // Update stats in real-time
-            setAttendees(prev => prev.map(a => 
-              a.id === updatedAttendee.id ? updatedAttendee : a
-            ));
-            
+          // Only trigger notification if check-in status changed from false to true
+          if (!oldAttendee.checkedIn && updatedAttendee.checkedIn) {
             // Check if attendee has allergy or accessibility needs
             const allergy = updatedAttendee.severeAllergy?.toLowerCase().trim() || '';
             const accessibility = updatedAttendee.accessibilityNeeds?.toLowerCase().trim() || '';
@@ -136,18 +145,27 @@ export const AdminView: React.FC = () => {
                 setNotifications(prev => prev.filter(n => n.id !== notificationId));
               }, 5000);
             }
-          } else {
-            // For other updates (like notes, country, etc.), just update the state silently
-            setAttendees(prev => prev.map(a => 
-              a.id === updatedAttendee.id ? updatedAttendee : a
-            ));
           }
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Real-time subscription active for check-ins');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Real-time subscription error:', status);
+        } else if (status === 'TIMED_OUT') {
+          console.warn('Real-time subscription timed out');
+        } else if (status === 'CLOSED') {
+          console.warn('Real-time subscription closed');
+        }
+      });
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(channel).then(() => {
+        console.log('Real-time channel removed');
+      }).catch((err) => {
+        console.error('Error removing channel:', err);
+      });
     };
   }, [isAuthenticated]);
 

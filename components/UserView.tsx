@@ -258,7 +258,11 @@ export const UserView: React.FC = () => {
     const attendeeId = result.attendee.id;
 
     const channel = supabase
-      .channel(`swag-status-${attendeeId}-${Date.now()}`)
+      .channel(`swag-status-${attendeeId}`, {
+        config: {
+          broadcast: { self: true }
+        }
+      })
       .on(
         'postgres_changes',
         {
@@ -295,7 +299,13 @@ export const UserView: React.FC = () => {
           ));
         }
       )
-      .subscribe();
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('Real-time subscription active for swag status');
+        } else if (status === 'CHANNEL_ERROR') {
+          console.error('Real-time subscription error for swag status');
+        }
+      });
 
     return () => {
       supabase.removeChannel(channel);
