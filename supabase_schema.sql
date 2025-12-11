@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS attendees (
   "checkedIn" BOOLEAN DEFAULT FALSE,
   "checkInTime" TIMESTAMPTZ,
   "purchaseDate" TEXT,
+  "tShirtSize" TEXT,
   country TEXT,
   "severeAllergy" TEXT,
   "accessibilityNeeds" TEXT,

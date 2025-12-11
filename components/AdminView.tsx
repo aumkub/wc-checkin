@@ -995,6 +995,9 @@ export const AdminView: React.FC = () => {
                                 {attendee.purchaseDate && (
                                   <span className="text-xs text-slate-400">Purchased: {attendee.purchaseDate}</span>
                                 )}
+                                {attendee.tShirtSize && (
+                                  <span className="text-xs text-blue-600 font-medium">T-Shirt: {attendee.tShirtSize}</span>
+                                )}
                               </div>
                             </td>
                             <td className="px-6 py-4 text-slate-600 text-sm">
@@ -1192,7 +1195,7 @@ export const AdminView: React.FC = () => {
                     <Upload className="w-6 h-6" />
                   </div>
                   <span className="text-sm font-medium text-slate-700">Upload CSV to Update DB</span>
-                  <span className="text-xs text-slate-400">Format: Attendee ID, Ticket Type, First Name, Last Name, E-mail Address, Purchase date, Country, Severe allergy, Accessibility needs, First Time Attending, Notes</span>
+                  <span className="text-xs text-slate-400">Format: Attendee ID, Ticket Type, First Name, Last Name, E-mail Address, Purchase date, What's your T-Shirt size?, Where you live or where you're from ?, Severe allergy, Accessibility needs, First Time Attending</span>
                 </label>
               </div>
             </section>

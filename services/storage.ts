@@ -162,8 +162,8 @@ export const parseCSV = (csvText: string): Attendee[] => {
     const values = splitCSVLine(currentLine);
     
     // New format: Attendee ID, Ticket Type, First Name, Last Name, E-mail Address,
-    // Purchase date, Where you live or where you're from?, Severe allergy, 
-    // Accessibility needs, First Time Attending, Notes
+    // Purchase date, What's your T-Shirt size?, Where you live or where you're from ?, 
+    // Severe allergy, Accessibility needs, First Time Attending
     if (values.length >= 5) {
       const attendee: Attendee = {
         id: values[0] || Math.random().toString(36).substr(2, 9),
@@ -176,11 +176,12 @@ export const parseCSV = (csvText: string): Attendee[] => {
       
       // Add optional fields if present
       if (values.length > 5) attendee.purchaseDate = values[5]?.replace(/^"|"$/g, '') || '';
-      if (values.length > 6) attendee.country = values[6]?.replace(/^"|"$/g, '') || '';
-      if (values.length > 7) attendee.severeAllergy = values[7]?.replace(/^"|"$/g, '') || '';
-      if (values.length > 8) attendee.accessibilityNeeds = values[8]?.replace(/^"|"$/g, '') || '';
-      if (values.length > 9) attendee.firstTimeAttending = values[9]?.replace(/^"|"$/g, '') || '';
-      if (values.length > 10) attendee.notes = values[10]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 6) attendee.tShirtSize = values[6]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 7) attendee.country = values[7]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 8) attendee.severeAllergy = values[8]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 9) attendee.accessibilityNeeds = values[9]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 10) attendee.firstTimeAttending = values[10]?.replace(/^"|"$/g, '') || '';
+      if (values.length > 11) attendee.notes = values[11]?.replace(/^"|"$/g, '') || '';
       
       attendees.push(attendee);
     }

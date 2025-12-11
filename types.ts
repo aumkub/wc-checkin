@@ -7,6 +7,7 @@ export interface Attendee {
   checkedIn: boolean;
   checkInTime?: string; // ISO string
   purchaseDate?: string; // Purchase date
+  tShirtSize?: string; // T-Shirt size
   country?: string; // Where you live or where you're from
   severeAllergy?: string; // Severe allergy answer
   accessibilityNeeds?: string; // Accessibility needs answer

@@ -13,6 +13,7 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [scannedAttendee, setScannedAttendee] = useState<Attendee | null>(null);
   const html5QrCodeRef = useRef<Html5Qrcode | null>(null);
   const scannerId = 'swag-qr-scanner';
 
@@ -82,15 +83,18 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
           }
 
           // Mark swag as received
-          const success = await Storage.updateSwagReceived(attendee.id, true);
-          if (success) {
+          const updateSuccess = await Storage.updateSwagReceived(attendee.id, true);
+          if (updateSuccess) {
+            setScannedAttendee(attendee);
             setSuccess(`${attendee.firstName} ${attendee.lastName} - Swag marked as received!`);
             onScanSuccess({ ...attendee, swagReceived: true });
             
-            // Auto close after 2 seconds
-            setTimeout(() => {
-              onClose();
-            }, 2000);
+            // Only auto close if there's no T-shirt size (so admin can see T-shirt info)
+            if (!attendee.tShirtSize) {
+              setTimeout(() => {
+                onClose();
+              }, 2000);
+            }
           } else {
             setError('Failed to update swag status. Please try again.');
           }
@@ -152,9 +156,21 @@ export const SwagScanView: React.FC<SwagScanViewProps> = ({ onScanSuccess, onClo
 
           {success && (
             <div className="mb-4 p-4 bg-green-50 border-2 border-green-200 rounded-lg w-full">
-              <div className="flex items-center gap-2 text-green-800">
-                <CheckCircle2 className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm font-medium">{success}</p>
+              <div className="flex items-start gap-2 text-green-800">
+                <CheckCircle2 className="w-5 h-5 flex-shrink-0 mt-0.5" />
+                <div className="flex-1">
+                  <p className="text-sm font-medium">{success}</p>
+                  {scannedAttendee?.ticketType && (
+                    <p className="inline-flex items-center gap-2 text-xs mt-1 font-semibold bg-[#0F733A] text-white p-2 rounded-md">
+                      Ticket Type: {scannedAttendee.ticketType}
+                    </p>
+                  )}
+                  {scannedAttendee?.tShirtSize && (
+                    <p className="inline-flex items-center gap-2 text-xs mt-1 font-semibold bg-[#0F733A] text-white p-2 rounded-md">
+                      T-Shirt Size: {scannedAttendee.tShirtSize}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
           )}
