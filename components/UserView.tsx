@@ -476,9 +476,7 @@ export const UserView: React.FC = () => {
               {result.success && result.attendee && result.attendee.swagReceived && (
                 <div className="mb-6 p-4 bg-green-50 rounded-xl border-2 border-green-200">
                   <div className="text-center">
-                    <div className="w-16 h-16 mx-auto mb-3 rounded-full bg-green-100 flex items-center justify-center">
-                      <CheckCircle2 className="w-8 h-8 text-green-600" />
-                    </div>
+                    <img src="/wapuu-badge.png" alt="Wapuu Badge" className="w-20 mx-auto mb-3" />
                     <p className="text-sm font-semibold text-green-800 mb-1">Swag Already Claimed</p>
                     <p className="text-xs text-green-700">
                       You have already received your swag. Thank you!
@@ -490,9 +488,9 @@ export const UserView: React.FC = () => {
               {result.alreadyCheckedIn ? (
                 <div className="bg-blue-50 border-2 border-blue-300 rounded-lg p-4 mb-6">
                   <div className="flex items-center justify-center gap-2 mb-2">
-                    <CheckCircle2 className="w-5 h-5 text-blue-600" />
-                    <p className="text-blue-900 font-semibold text-base">You Are Already Checked In</p>
+                    <img src="/Banner.png" alt="Banner" className="w-36 mx-auto mb-3" />
                   </div>
+                  <p className="text-blue-900 font-semibold text-base">You Are Already Checked In</p>
                   <p className="text-blue-800 text-sm">
                     Your check-in was completed successfully. No further action is needed.
                   </p>
