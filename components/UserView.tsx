@@ -505,20 +505,20 @@ export const UserView: React.FC = () => {
                             <div className="flex items-center justify-center gap-4 flex-wrap">
                               {countdown.hours > 0 && (
                                 <div className="flex flex-col items-center">
-                                  <p className="text-5xl font-bold leading-none">{countdown.hours}</p>
+                                  <p className="text-4xl font-bold leading-none">{countdown.hours}</p>
                                   <p className="text-sm font-medium opacity-90 mt-1">Hour{countdown.hours !== 1 ? 's' : ''}</p>
                                 </div>
                               )}
                               {countdown.hours > 0 && <span className="text-3xl font-bold opacity-70">:</span>}
                               {countdown.minutes > 0 && (
                                 <div className="flex flex-col items-center">
-                                  <p className="text-5xl font-bold leading-none">{countdown.minutes}</p>
+                                  <p className="text-4xl font-bold leading-none">{countdown.minutes}</p>
                                   <p className="text-sm font-medium opacity-90 mt-1">Min{countdown.minutes !== 1 ? 's' : ''}</p>
                                 </div>
                               )}
                               {(countdown.hours > 0 || countdown.minutes > 0) && <span className="text-3xl font-bold opacity-70">:</span>}
                               <div className="flex flex-col items-center">
-                                <p className="text-5xl font-bold leading-none">{countdown.seconds}</p>
+                                <p className="text-4xl font-bold leading-none">{countdown.seconds}</p>
                                 <p className="text-sm font-medium opacity-90 mt-1">Sec{countdown.seconds !== 1 ? 's' : ''}</p>
                               </div>
                             </div>
