@@ -17,6 +17,7 @@ export const UserView: React.FC = () => {
   const [pendingCheckIn, setPendingCheckIn] = useState<{ email: string; validTickets: Attendee[] } | null>(null);
   const [checkedInTickets, setCheckedInTickets] = useState<Attendee[]>([]);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string | null>(null);
+  const [countdown, setCountdown] = useState<{ hours: number; minutes: number; seconds: number } | null>(null);
 
   const handleCheckIn = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,6 +252,37 @@ export const UserView: React.FC = () => {
     return false;
   }, [result, pendingCheckIn, checkedInTickets]);
 
+  // Countdown timer to 10AM on 14 Dec 2025 in Bangkok timezone
+  useEffect(() => {
+    const updateCountdown = () => {
+      // Create target date: 10AM on 14 Dec 2025 in Bangkok timezone (Asia/Bangkok, UTC+7)
+      // Using ISO string with timezone offset ensures consistent calculation
+      const targetDate = new Date('2025-12-14T10:00:00+07:00');
+      
+      // Get current time - this is in UTC
+      const now = new Date();
+      
+      // Calculate difference in milliseconds
+      const diff = targetDate.getTime() - now.getTime();
+      
+      if (diff <= 0) {
+        setCountdown(null);
+        return;
+      }
+      
+      const hours = Math.floor(diff / (1000 * 60 * 60));
+      const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+      const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+      
+      setCountdown({ hours, minutes, seconds });
+    };
+    
+    updateCountdown();
+    const interval = setInterval(updateCountdown, 1000);
+    
+    return () => clearInterval(interval);
+  }, []);
+
   // Real-time subscription for swag status updates
   useEffect(() => {
     if (!result?.attendee?.id) return;
@@ -459,15 +491,52 @@ export const UserView: React.FC = () => {
                 <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <div className="text-center">
                     <p className="text-sm font-semibold text-slate-700 mb-3">Swag Claim QR Code</p>
-                    <div className="flex justify-center mb-2">
+                    <div className="relative flex justify-center mb-2">
                       <img 
                         src={qrCodeDataUrl} 
                         alt="Swag Claim QR Code" 
                         className="w-48 h-48 border-4 border-white rounded-lg shadow-md"
                       />
+                      {/* Countdown Timer Overlay */}
+                      {countdown && (
+                        <div className="absolute inset-0 flex items-center justify-center bg-black/80 backdrop-blur-sm rounded-lg">
+                          <div className="text-center text-white px-4">
+                            <p className="text-sm font-semibold mb-4 opacity-95">QR Code will be available in:</p>
+                            <div className="flex items-center justify-center gap-4 flex-wrap">
+                              {countdown.hours > 0 && (
+                                <div className="flex flex-col items-center">
+                                  <p className="text-5xl font-bold leading-none">{countdown.hours}</p>
+                                  <p className="text-sm font-medium opacity-90 mt-1">Hour{countdown.hours !== 1 ? 's' : ''}</p>
+                                </div>
+                              )}
+                              {countdown.hours > 0 && <span className="text-3xl font-bold opacity-70">:</span>}
+                              {countdown.minutes > 0 && (
+                                <div className="flex flex-col items-center">
+                                  <p className="text-5xl font-bold leading-none">{countdown.minutes}</p>
+                                  <p className="text-sm font-medium opacity-90 mt-1">Min{countdown.minutes !== 1 ? 's' : ''}</p>
+                                </div>
+                              )}
+                              {(countdown.hours > 0 || countdown.minutes > 0) && <span className="text-3xl font-bold opacity-70">:</span>}
+                              <div className="flex flex-col items-center">
+                                <p className="text-5xl font-bold leading-none">{countdown.seconds}</p>
+                                <p className="text-sm font-medium opacity-90 mt-1">Sec{countdown.seconds !== 1 ? 's' : ''}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <p className="text-xs text-slate-500 mt-4">
-                      Show this QR code<br></br>at the swag claim station to receive your items
+                      {countdown ? (
+                        <>
+                          QR code will be available at 10:00 AM<br></br>
+                          Show this QR code at the<br></br> swag claim station to receive your items
+                        </>
+                      ) : (
+                        <>
+                          Show this QR code<br></br>at the swag claim station to receive your items
+                        </>
+                      )}
                     </p>
                   </div>
                 </div>
@@ -477,8 +546,8 @@ export const UserView: React.FC = () => {
                 <div className="mb-6 p-4 bg-green-50 rounded-xl border-2 border-green-200">
                   <div className="text-center">
                     <img src="/wapuu-badge.png" alt="Wapuu Badge" className="w-20 mx-auto mb-3" />
-                    <p className="text-sm font-semibold text-green-800 mb-1">Swag Already Claimed</p>
-                    <p className="text-xs text-green-700">
+                    <p className="text-base font-semibold text-green-800 mb-1">Swag Already Claimed</p>
+                    <p className="text-sm text-green-700">
                       You have already received your swag. Thank you!
                     </p>
                   </div>

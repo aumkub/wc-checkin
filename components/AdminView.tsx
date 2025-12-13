@@ -203,25 +203,65 @@ export const AdminView: React.FC = () => {
       const text = event.target?.result as string;
       const parsed = Storage.parseCSV(text);
       
-      // Filter out attendees that already exist (same email + ticketType)
       // Normalize email for comparison
       const normalizeEmail = (email: string) => email.toLowerCase().trim();
       
-      // Create a map of existing attendees by email + ticketType
-      const existingMap = new Map<string, Attendee>();
+      // Create a map of existing attendees by ID
+      const existingByIdMap = new Map<string, Attendee>();
+      attendees.forEach(a => {
+        existingByIdMap.set(a.id, a);
+      });
+      
+      // Create a map of existing attendees by email + ticketType (for detecting truly new entries)
+      const existingByEmailTypeMap = new Map<string, Attendee>();
       attendees.forEach(a => {
         const key = `${normalizeEmail(a.email)}|${a.ticketType}`;
-        existingMap.set(key, a);
+        existingByEmailTypeMap.set(key, a);
       });
       
-      // Filter out existing attendees - only keep new ones
-      const toSave = parsed.filter(p => {
-        const key = `${normalizeEmail(p.email)}|${p.ticketType}`;
-        return !existingMap.has(key);
+      // Process parsed attendees
+      const toUpdate: Attendee[] = [];
+      const toInsert: Attendee[] = [];
+      
+      parsed.forEach(p => {
+        // Check if ID exists - if so, update email, firstName, lastName
+        const existingById = existingByIdMap.get(p.id);
+        if (existingById) {
+          // ID matches - update the attendee with new email, firstName, lastName
+          // Preserve existing check-in status and other fields
+          toUpdate.push({
+            ...existingById,
+            email: p.email,
+            firstName: p.firstName,
+            lastName: p.lastName,
+            // Preserve other fields from existing attendee
+            checkedIn: existingById.checkedIn,
+            checkInTime: existingById.checkInTime,
+            country: existingById.country,
+            notes: existingById.notes,
+            swagReceived: existingById.swagReceived,
+            ticketType: existingById.ticketType,
+            purchaseDate: existingById.purchaseDate,
+            tShirtSize: existingById.tShirtSize,
+            severeAllergy: existingById.severeAllergy,
+            accessibilityNeeds: existingById.accessibilityNeeds,
+            firstTimeAttending: existingById.firstTimeAttending,
+          });
+        } else {
+          // ID doesn't exist - check if it's a duplicate by email+ticketType
+          const key = `${normalizeEmail(p.email)}|${p.ticketType}`;
+          if (!existingByEmailTypeMap.has(key)) {
+            // Truly new attendee
+            toInsert.push(p);
+          }
+          // If email+ticketType exists but ID is different, skip it (duplicate)
+        }
       });
       
-      if (toSave.length === 0) {
-        alert('All attendees in the CSV already exist in the database. No new attendees to add.');
+      const allToSave = [...toUpdate, ...toInsert];
+      
+      if (allToSave.length === 0) {
+        alert('All attendees in the CSV already exist in the database. No updates or new attendees to add.');
         setLoadingData(false);
         // Reset file input
         if (e.target) {
@@ -230,14 +270,21 @@ export const AdminView: React.FC = () => {
         return;
       }
 
-      const skippedCount = parsed.length - toSave.length;
+      const skippedCount = parsed.length - allToSave.length;
       setLoadingData(true);
-      await Storage.upsertAttendees(toSave);
+      await Storage.upsertAttendees(allToSave);
       await loadData(); // Reload from DB
       
-      let message = `Imported ${toSave.length} new attendee(s).`;
+      let message = '';
+      if (toUpdate.length > 0 && toInsert.length > 0) {
+        message = `Updated ${toUpdate.length} attendee(s) and imported ${toInsert.length} new attendee(s).`;
+      } else if (toUpdate.length > 0) {
+        message = `Updated ${toUpdate.length} attendee(s).`;
+      } else {
+        message = `Imported ${toInsert.length} new attendee(s).`;
+      }
       if (skippedCount > 0) {
-        message += ` Skipped ${skippedCount} existing attendee(s).`;
+        message += ` Skipped ${skippedCount} duplicate attendee(s).`;
       }
       alert(message);
       setLoadingData(false);
@@ -754,11 +801,9 @@ export const AdminView: React.FC = () => {
                         });
                         
                         const sortedContributorCountries = Array.from(contributorCountryCounts.entries())
-                          .sort((a, b) => b[1] - a[1])
-                          .slice(0, 5);
+                          .sort((a, b) => b[1] - a[1]);
                         const sortedOtherCountries = Array.from(otherCountryCounts.entries())
-                          .sort((a, b) => b[1] - a[1])
-                          .slice(0, 5);
+                          .sort((a, b) => b[1] - a[1]);
                         
                         if (contributorCountryCounts.size === 0 && otherCountryCounts.size === 0) {
                           return <p className="text-sm text-slate-400 italic">No country data for today's check-ins</p>;
@@ -776,11 +821,6 @@ export const AdminView: React.FC = () => {
                                     <span className="font-bold text-[#10733A] ml-2">{count}</span>
                                   </div>
                                 ))}
-                                {contributorCountryCounts.size > 5 && (
-                                  <p className="text-xs text-slate-400 pt-1">
-                                    +{contributorCountryCounts.size - 5} more
-                                  </p>
-                                )}
                                 <div className="pt-1 border-t border-slate-200">
                                   <div className="flex justify-between items-center">
                                     <span className="text-slate-700 font-medium text-xs">Total:</span>
@@ -800,11 +840,6 @@ export const AdminView: React.FC = () => {
                                     <span className="font-bold text-[#11723A] ml-2">{count}</span>
                                   </div>
                                 ))}
-                                {otherCountryCounts.size > 5 && (
-                                  <p className="text-xs text-slate-400 pt-1">
-                                    +{otherCountryCounts.size - 5} more
-                                  </p>
-                                )}
                                 <div className="pt-1 border-t border-slate-200">
                                   <div className="flex justify-between items-center">
                                     <span className="text-slate-700 font-medium text-xs">Total:</span>
